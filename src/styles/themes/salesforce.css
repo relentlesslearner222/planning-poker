@@ -1,0 +1,324 @@
+/*
+ * Salesforce Lightning Design System (SLDS)-Inspired Theme
+ * Issue #4: Add Salesforce themes
+ *
+ * Color Palette Reference:
+ *   Primary Blue  : #0176D3
+ *   Dark Navy     : #032D60
+ *   Light Blue   : #E3F0FC
+ *   Text Dark     : #181818
+ *   Text Muted   : #444444
+ *   Success       : #2E844A
+ *   Warning       : #DD7200
+ *   Error         : #BA0517
+ *   White         : #FFFFFF
+ *   Border        : #DDDDDD
+ */
+
+[data-theme="salesforce"] {
+  /* ------------------------------------------
+   * CSS Custom Properties (Design Tokens)
+   * ------------------------------------------ */
+
+  /* Brand Colors */
+  --sf-color-primary:          #0176D3;
+  --sf-color-primary-dark:    #032D60;
+  --sf-color-primary-light:   #E3F0FC;
+  --sf-color-primary-hover:   #015AA3;
+  --sf-color-primary-active:  #014480;
+
+  /* Surface & Background */
+  --sf-color-bg-page:         #F3F3F3;
+  --sf-color-bg-card:         #FFFFFF;
+  --sf-color-bg-modal:        #FFFFFF;
+  --sf-color-bg-header:       #032D60;
+  --sf-color-bg-footer:       #032D60;
+  --sf-color-bg-sidebar:      #FFFFFF;
+
+  /* Typography */
+  --sf-color-text-default:    #181818;
+  --sf-color-text-muted:      #444444;
+  --sf-color-text-inverse:    #FFFFFF;
+  --sf-color-text-link:       #0176D3;
+  --sf-color-text-link-hover: #015AA3;
+
+  /* Borders */
+  --sf-color-border:          #DDDDDD;
+  --sf-color-border-focus:    #0176D3;
+  --sf-color-border-card:     #DDDDDD;
+
+  /* Status Colors */
+  --sf-color-success:         #2E844A;
+  --sf-color-warning:         #DD7200;
+  --sf-color-error:           #BA0517;
+  --sf-color-info:            #0176D3;
+
+  /* Shadows & Radius */
+  --sf-radius-sm:             0xpx;
+  --sf-radius-md:             4px;
+  --sf-radius-lg:             8px;
+  --sf-shadow-sm:             0 1px 3px rgba(0,0,0,0.12);
+  --sf-shadow-md:             0 2px 6px rgba(0,0,0,0.16);
+  --sf-radius-button:         4px;
+
+  /* Spacing */
+  --sf-space-xs:              4px;
+  --sf-space-sm:              8px;
+  --sf-space-md:              16px;
+  --sf-space-lg:              24px;
+  --sf-space-xl:              32px;
+
+  /* Typography */
+  --sf-font-family:           'SalesforceSans', 'Noto Sans', sans-serif;
+  --sf-font-size-sm:           0.75rem;
+  --sf-font-size-md:          0.875rem;
+  --sf-font-size-lg:          1rem;
+  --sf-font-size-xl:          1.25rem;
+  --sf-font-size-2xl:         1.5rem;
+  --sf-font-weight-regular:   400;
+  --sf-font-weight-bold:      700;
+}
+
+/* -----------------------------------------------------
+ * GLOBAL PAGE & LAYOUT
+ * ---------------------------------------------------- */
+
+[data-theme="salesforce"] body,
+ [data-theme="salesforce"] #root,
+[data-theme="salesforce"] .app-wrapper {
+  background-color: var(--sf-color-bg-page);
+  color: var(--sf-color-text-default);
+  font-family: var(--sf-font-family);
+  font-size: var(--sf-font-size-md);
+  line-height: 1.5;
+}
+
+/* -----------------------------------------------------
+ * HEADER
+ * ---------------------------------------------------- */
+
+[data-theme="salesforce"] .app-header,
+[data-theme="salesforce"] header {
+  background-color: var(--sf-color-bg-header);
+  color: var(--sf-color-text-inverse);
+  padding: 0 var(--sf-space-md);
+  height: 52px;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+}
+
+[data-theme="salesforce"] .app-header a,
+[data-theme="salesforce"] header a {
+  color: var(--sf-color-text-inverse);
+  text-decoration: none;
+}
+
+/* -----------------------------------------------------
+ * FOOTER
+ * ---------------------------------------------------- */
+
+[data-theme="salesforce"] .app-footer,
+[data-theme="salesforce"] footer {
+  background-color: var(--sf-color-bg-footer);
+  color: var(--sf-color-text-inverse);
+  padding: var(--sf-space-md);
+  text-align: center;
+  font-size: var(--sf-font-size-sm);
+}
+
+/* -----------------------------------------------------
+ * CARDS (Planning Poker vote cards)
+ * ---------------------------------------------------- */
+
+[[data-theme="salesforce"] .poker-card,
+[data-theme="salesforce"] .card {
+  background-color: var(--sf-color-bg-card);
+  border: 1px solid var(--sf-color-border-card);
+  border-radius: var(--sf-radius-md);
+  box-shadow: var(--sf-shadow-sm);
+  padding: var(--sf-space-md);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+  cursor: pointer;
+  user-select: none;
+}
+
+[[data-theme="salesforce"] .poker-card:hover,
+[data-theme="salesforce"] .card:hover {
+  box-shadow: var(--sf-shadow-md);
+  transform: translateY(-2px);
+}
+
+[[data-theme="salesforce"] .poker-card.selected,
+[[data-theme="salesforce"] .card.selected {
+  border-color: var(--sf-color-primary);
+  background-color: var(--sf-color-primary-light);
+  box-shadow: 0 0 0 2px var(--sf-color-primary);
+}
+
+/* -----------------------------------------------------
+ * BUTTONS
+ * ---------------------------------------------------- */
+
+[data-theme="salesforce"] .btn-primary,
+[data-theme="salesforce"] button[data-variant="primary"] {
+  background-color: var(--sf-color-primary);
+  color: var(--sf-color-text-inverse);
+  border: 1px solid var(--sf-color-primary);
+  border-radius: var(--sf-radius-button);
+  padding: var(--sf-space-xs) var(--sf-space-md);
+  font-size: var(--sf-font-size-md);
+  font-weight: var(--sf-font-weight-bold);
+  line-height: 1.875rem;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+[data-theme="salesforce"] .btn-primary:hover,
+[[data-theme="salesforce"] button[[data-variant="primary"]:hover {
+  background-color: var(--sf-color-primary-hover);
+  border-color: var(--sf-color-primary-hover);
+}
+
+[[data-theme="salesforce"] .btn-primary:active,
+[[data-theme="salesforce"] button[[data-variant="primary"]:active {
+  background-color: var(--sf-color-primary-active);
+  border-color: var(--sf-color-primary-active);
+}
+
+[[data-theme="salesforce"] .btn-secondary,
+ [[data-theme="salesforce"] button[[data-variant="secondary"] {
+  background-color: transparent;
+  color: var(--sf-color-primary);
+  border: 1px solid var(--sf-color-primary);
+  border-radius: var(--sf-radius-button);
+  padding: var(--sf-space-xs) var(--sf-space-md);
+  font-size: var(--sf-font-size-md);
+  font-weight: var(--sf-font-weight-bold);
+  line-height: 1.875rem;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+[[data-theme="salesforce"] .btn-secondary:hover,
+ [[data-theme="salesforce"] button[[data-variant="secondary"]:hover {
+  background-color: var(--sf-color-primary-light);
+}
+
+/* -----------------------------------------------------
+ * MODAL
+ * ---------------------------------------------------- */
+
+[[data-theme="salesforce"] .modal-overlay {
+  background-color: rgba(0, 0, 0, 0.5);
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+[[data-theme="salesforce"] .modal {
+  background-color: var(--sf-color-bg-modal);
+  border-radius: var(--sf-radius-lg);
+  box-shadow: 0 16px 32px rgba(0,0,0,0.24);
+  min-width: 300px;
+  max-width: 600px;
+  width: 90%;
+  overflow: hidden;
+}
+
+[[data-theme="salesforce"] .modal-header {
+  background-color: var(--sf-color-primary-dark);
+  color: var(--sf-color-text-inverse);
+  padding: var(--sf-space-md) var(--sf-space-lg);
+  font-size: var(--sf-font-size-xl);
+  font-weight: var(--sf-font-weight-bold);
+}
+
+[[data-theme="salesforce"] .modal-body {
+  padding: var(--sf-space-lg);
+}
+
+[[data-theme="salesforce"] .modal-footer {
+  padding: var(--sf-space-md) var(--sf-space-lg);
+  border-top: 1px solid var(--sf-color-border);
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sf-space-sm);
+}
+
+/* -----------------------------------------------------
+ * INPUTS & FORM ELEXMENTS
+ * ---------------------------------------------------- */
+
+[[data-theme="salesforce"] input,
+[[data-theme="salesforce"] textarea,
+[[data-theme="salesforce"] select {
+  border: 1px solid var(--sf-color-border);
+  border-radius: var(--sf-radius-md);
+  padding: var(--sf-space-xs) var(--sf-space-sm);
+  font-size: var(--sf-font-size-md);
+  color: var(--sf-color-text-default);
+  background-color: var(--sf-color-bg-card);
+  width: 100%;
+  transition: border-color 0.15s ease;
+}
+
+[[data-theme="salesforce"] input:focus,
+[[data-theme="salesforce"] textarea:focus,
+[[data-theme="salesforce"] select:focus {
+  outline: 2px solid var(--sf-color-border-focus);
+  outline-offset: 0;
+  border-color: var(--sf-color-border-focus);
+}
+
+/* -----------------------------------------------------
+ * BADGES & TAGS
+ * ---------------------------------------------------- */
+
+[[data-theme="salesforce"] .badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--sf-space-sm);
+  border-radius: 12px;
+  font-size: var(--sf-font-size-sm);
+  font-weight: var(--sf-font-weight-bold);
+  line-height: 1.5;
+}
+
+[[data-theme="salesforce"] .badge-primary {
+  background-color: var(--sf-color-primary-light);
+  color: var(--sf-color-primary-dark);
+}
+
+/* -----------------------------------------------------
+ * RESPONSIVE OVERRIDES
+ * ---------------------------------------------------- */
+
+@media (max-width: 64rem) {
+  [[data-theme="salesforce"] .modal {
+    width: 95%;
+    max-width: 95%;
+  }
+}
+
+@media (max-width: 48rem) {
+  [[data-theme="salesforce"] .app-header,
+  [[data-theme="salesforce"] header {
+    padding: 0 var(--sf-space-sm);
+  }
+
+  [[data-theme="salesforce"] .poker-card,
+  [[data-theme="salesforce"] .card {
+    padding: var(--sf-space-sm);
+  }
+}
