@@ -1,0 +1,165 @@
+// timerPoker.css -- scoped styles for TimerPoker (Issue #7)
+
+.my/* =============================================================
+   Container
+   ============================================================= */
+.timer-poker {
+  font-family: 'Segoe UI', sans-serif;
+  max-width: 640px;
+  margin: 2rem auto;
+  padding: 2rem;
+  background: #1a1a2e;
+  color: #e0e0ff;
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  text-align: center;
+}
+
+.timer-poker h1 {
+  font-size: 1.8rem;
+  margin-bottom: 1.5rem;
+  color: #a584ff;
+}
+
+/* =============================================================
+   Timer ring
+   ============================================================= */
+.timer-wrapper {
+  position: relative;
+  width: 130px;
+  height: 130px;
+  margin: 0 auto 1.5rem;
+}
+
+.timer-svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.track {
+  fill: none;
+  stroke: #333355;
+  stroke-width: 8;
+}
+
+.timer-ring {
+  fill: none;
+  stroke: #a584ff;
+  stroke-width: 8;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 1s linear, stroke 0.3s;
+}
+
+.timer-ring.urgent {
+  stroke: #ff6060;
+  animation: pulse 0.8s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%  { opacity: 1; }
+   50% { opacity: 0.4; }
+  100%{ opacity: 1; }
+}
+
+.timer-label {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: #e0e0ff;
+}
+
+/* =============================================================
+   Controls
+   ============================================================= */
+.controls {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+}
+
+.controls button {
+  padding: 0.5rem 1.2rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  cursor: pointer;
+  background: #a584ff;
+  color: #111;
+  transition: transform 0.1s, opacity 0.2s;
+}
+
+.controls button:hover {
+  transform: scale(1.05);
+  opacity: 0.9;
+}
+
+/* =============================================================
+   Cards
+   ============================================================= */
+.cards-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+}
+
+.card {
+  width: 56px;
+  height: 78px;
+  border-radius: 8px;
+  border: 2px solid #a584ff;
+  background: #222244;
+  color: #e0e0ff;
+  font-size: 1.2rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.2s, background 0.2s;
+}
+
+.card:hover {
+  transform: translateY(-8px);
+  background: #333366;
+}
+
+.card.selected {
+  background: #a584ff;
+  color: #111;
+  transform: translateY(-12px);
+}
+
+/* =============================================================
+   Results
+   ============================================================= */
+.results {
+  background: #222244;
+  border-radius: 12px;
+  padding: 1rem 1.5rem;
+  margin-top: 1rem;
+}
+
+.results h2 {
+  color: #a584ff;
+  margin-bottom: 0.8rem;
+}
+
+.results ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.results li {
+  padding: 0.3rem 0;
+  font-size: 1.1rem;
+  border-bottom: 1px solid #333355;
+}
+
+.results li:last-child {
+  border-bottom: none;
+}
