@@ -1,156 +1,192 @@
-import { useState, useEffect, useRef } from 'react';
-import { io } from 'socket.io-client';
+import { useEffect, useState, useRef } from 'react';
+import io from 'socket.io-client';
 import './App.css';
 
-const socket = io('/v', { autoConnect: false });
-// Adjust the URL to match your server (e.g. http://localhost:3001)
-const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || 'http://localhost:3001';
-const socketClient = io(SOCKET_URL, { autoConnect: false });
+const socket = io('http://localhost:4000');
+
+const VOTE_OPTIONS = ['1', '2', '3', '5', '8', '13', '21', '?'];
+const TIMER_PRESETS = [30, 60, 90, 120];
+
+function formatTime(secs) {
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
 
 export default function App() {
-  const [roomId, setRoomId] = useState('');
-  const [name, setName] = useState('');
   const [joined, setJoined] = useState(false);
-  const [room, setRoom] = useState(null);
+  const [name, setName] = useState('');
+  const [roomId, setRoomId] = useState('');
+  const [roomState, setRoomState] = useState(null);
   const [selectedVote, setSelectedVote] = useState(null);
-  const [customDuration, setCustomDuration] = useState(60);
-  const socketRef = useRef(null);
+  const [customDuration, setCustomDuration] = useState('');
+  const roomIdRef = useRef(roomId);
+
+  useEffect(() => { roomIdRef.current = roomId; }, [roomId]);
 
   useEffect(() => {
-    const s = io(SOCKET_URL);
-    socketRef.current = s;
-
-    s.on('roomUpdate', (data) => {
-      setRoom(data);
+    socket.on('roomUpdate', (data) => {
+      setRoomState(data);
     });
-
-    return () => { s.disconnect(); };
+    return () => { socket.off('roomUpdate'); };
   }, []);
 
-  const isHost = room && socketRef.current && room.hostId === socketRef.current.id;
-  const timer = room?.timer || { state: 'idle', duration: 60, remaining: 60 };
+  const isHost = roomState?.hostId === socket.id;
+  const timer = roomState?.timer;
+  const isUrgent = timer && timer.remaining <= 10 && timer.state === 'running';
 
-  function joinRoom() {
-    if (!roomId || !name) return;
-    socketRef.current.emit('joinRoom', { roomId, name });
+  function handleJoin() {
+    if (!name.trim() || !roomId.trim()) return;
+    socket.emit('joinRoom', { roomId, name });
     setJoined(true);
   }
 
-  function submitVote(vote) {
-    socketRef.current.emit('submitVote', { roomId, vote });
-    setSelectedVote(vote);
+  function handleVote(v) {
+    setSelectedVote(v);
+    socket.emit('submitVote', { roomId, vote: v });
   }
 
-  function revealVotes() {
-    socketRef.current.emit('revealVotes', { roomId });
-  }
-
-  function resetRound() {
+  function handleReveal() { socket.emit('revealVotes', { roomId }); }
+  function handleReset() {
     setSelectedVote(null);
-    socketRef.current.emit('resetRound', { roomId });
+    socket.emit('resetRoom', { roomId });
   }
 
-  function setDuration(d) {
-    setCustomDuration(d);
-    socketRef.current.emit('setTimerDuration', { roomId, duration: d });
+  function handleTimerConfig(duration) {
+    socket.emit('timerConfig', { roomId, duration });
   }
 
-  function startTimer() { socketRef.current.emit('startTimer', { roomId }); }
-  function pauseTimer() { socketRef.current.emit('pauseTimer', { roomId }); }
-  function resumeTimer() { socketRef.current.emit('resumeTimer', { roomId }); }
-  function resetTimer() { socketRef.current.emit('resetTimer', { roomId }); }
-
-  const formatTime = (secs) => {
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
-    return `${m}:${String(s).padStart(2, '0')}`;
-  };
-
-  const isUrgent = timer.state === 'running' && timer.remaining <= 10;
+  function handleCustomDuration() {
+    const val = parseInt(customDuration, 10);
+    if (isNaN(val) || val < 10 || val > 300) return;
+    handleTimerConfig(val);
+    setCustomDuration('');
+  }
 
   if (!joined) {
     return (
-      <div className="app">
+      <div className="lobby">
         <h1>Planning Poker</h1>
-        <input placeholder="Room ID" value={roomId} onChange={e => setRoomId(e.target.value)} />
         <input placeholder="Your name" value={name} onChange={e => setName(e.target.value)} />
-        <button onClick={joinRoom}>Join Room</button>
+        <input placeholder="Room ID" value={roomId} onChange={e => setRoomId(e.target.value)} />
+        <button onClick={handleJoin}>Join Room</button>
       </div>
     );
   }
 
   return (
     <div className="app">
-      <h1>Planning Poker — Room: {roomId}</h1>
+      <header>
+        <h1>Planning Poker</h1>
+        <span className="room-label">Room: <strong>{roomId}</strong></span>
+      </header>
 
-      {/* --- TIMER DISPLAY --- */}
-      <div className={`timer-display${isUrgent ? ' timer-urgent' : ''}`}>
-        {formatTime(timer.remaining)}
-        <span className="timer-state-badge">{timer.state}</span>
-      </div>
-
-      {/* --- HOST: TIMER CONFIG & CONTROLS --- */}
-      {isHost && (
-        <div className="timer-panel">
-          <div className="timer-presets">
-            {[30, 60, 90, 120].map(d => (
-              <button key={d} onClick={() => setDuration(d)}
-                className={timer.duration === d ? 'active' : ''}>
-                {d}s
-              </button>
-            ))}
-            <input
-              type="number" min="10" max="300"
-              placeholder="Custom (10-300s)"
-              value={customDuration}
-              onChange={e => setCustomDuration(Number(e.target.value))}
-              onBlur={e => setDuration(Number(e.target.value))}
-            />
-          </div>
-          <div className="timer-controls">
-            {timer.state === 'idle' && <button onClick={startTimer}>Start</button>}
-            {timer.state === 'running' && <button onClick={pauseTimer}>Pause</button>}
-            {timer.state === 'paused' && <button onClick={resumeTimer}>Resume</button>}
-            <button onClick={resetTimer}>Reset Timer</button>
-          </div>
+      {/* --- TIMER DISPLAY (visible to all) --- */}
+      {timer && (
+        <div className={`timer-display${isUrgent ? ' urgent' : ''}`}>
+          {formatTime(timer.remaining)}
+          <span className="timer-state-label">{() => {
+            if (timer.state === 'idle') return ' [Idle]';
+            if (timer.state === 'running') return ' [Running]';
+            if (timer.state === 'paused') return ' [Paused]';
+            if (timer.state === 'expired') return ' [Time up!]';
+            return '';
+          })}</span>
         </div>
       )}
 
-      {/* --- PARTICIPANTS --- */}
-      <div className="participants">
-        <h2>Participants</h2>
-        {room?.participants.map((p) => {
-          const hasVoted = room.votes[p.id] !== undefined;
-          return (
-            <div key={p.id} className="participant">
-              <span>{p.name}{p.id === room.hostId ? ' 👇' : ''}</span>
-              <span className={hasVoted ? 'voted' : 'not-voted'}>
-                {room.revealed ? room.votes[p.id] : (hasVoted ? '✓' : '…')}
-              </span>
-            </div>
-          );
-        })}
-      </div>
+      {/* --- TIMER CONFIG (host only) --- */}
+      {isHost && (
+        <section className="timer-config">
+          <h2>Configure Timer</h2>
+          <div className="presets">
+            {TIMER_PRESETS.map((s) => (
+              <button
+                key={s}
+                className={timer?.duration === s ? 'preset active' : 'preset'}
+                onClick={() => handleTimerConfig(s)}
+              >
+                {s}s
+              </button>
+            ))}
+          </div>
+          <div className="custom-duration">
+            <input
+              type="number"
+              placeholder="Custom (10-300s)"
+              min="10"
+              max="300"
+              value={customDuration}
+              onChange={(e) => setCustomDuration(e.target.value)}
+            />
+            <button onClick={handleCustomDuration}>Set Custom</button>
+          </div>
 
-      {/* --- VOTING CARDS --- */}
-      {!room?.revealed && (
-        <div className="voting-cards">
-          {([1, 2, 3, 5, 8, 13, 21, 34, 55, '?']).map((v) => (
-            <button key={v}
-              className={`card${selectedVote === v ? ' selected' : ''}`}
-              onClick={() => submitVote(v)}
+          {/* Timer controls */}
+          <div className="timer-controls">
+            {timer?.state !== 'running' && (
+              <button onClick={() => socket.emit('timerStart', { roomId })}>
+                Start
+              </button>
+            )}
+            {timer?.state === 'running' && (
+              <button onClick={() => socket.emit('timerPause', { roomId })}>
+                Pause
+              </button>
+            )}
+            {timer?.state === 'paused' && (
+              <button onClick={() => socket.emit('timerResume', { roomId })}>
+                Resume
+              </button>
+            )}
+            <button onClick={() => socket.emit('timerReset', { roomId })}>
+              Reset
+            </button>
+          </div>
+        </section>
+      )}
+
+      {/* --- VOTING AREA --- */}
+      <section className="voting">
+        <h2>Vote</h2>
+        <div className="vote-cards">
+          {VOTE_OPTIONS.map((v) => (
+            <button
+              key={v}
+              className={`card${selectedVote === v ? ' selected' : ''}${roomState?.revealed ? ' disabled' : ''}`}
+              onClick={() => !roomState?.revealed && handleVote(v)}
+              disabled={roomState?.revealed}
             >
               {v}
             </button>
           ))}
         </div>
-      )}
+      </section>
+
+      {/* --- PARTICIPANTS --- */}
+      <section className="participants">
+        <h2>Participants</h2>
+        <ul>
+          {roomState?.participants.map((p) => (
+            <li key={p.id}>
+              {p.name} {p.id === roomState.hostId && <span className="host-badge">(host)</span>}
+              {roomState.revealed
+                ? <strong> {roomState.votes?.[p.id] ?? '-'}</strong>
+                : <span className={p.hasVoted ? 'voted' : 'unvoted'}>
+                    {p.hasVoted ? '✐' : '...'}
+                  </span>}
+            </li>
+          ))}
+        </ul>
+      </section>
 
       {/* --- HOST ACTIONS --- */}
       {isHost && (
         <div className="host-actions">
-          {!room.revealed && <button onClick={revealVotes}>Reveal Votes</button>}
-          <button onClick={resetRound}>Next Round</button>
+          {!roomState?.revealed && (
+            <button onClick={handleReveal}>Reveal Votes</button>
+          )}
+          <button onClick={handleReset}>New Round</button>
         </div>
       )}
     </div>
