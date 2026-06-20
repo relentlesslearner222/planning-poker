@@ -1,188 +1,209 @@
-// server/index.js  --  Planning Poker backend with server-synchronised timer
-const express = require('express');
-const http    = require('http');
-const { Server } = require('socket.io');
+/**
+ * server/index.js
+ * Socket.io event handlers for Planning Poker - timer feature (issue #10)
+ *
+ * Socket event contract (per spec):
+ *   Client -> Server:  timer:start   { duration: number }
+ *   Client -> Server:  timer:pause   null
+ *   Client -> Server:  timer:reset   null
+ *   Client -> Server:  room:join     { roomId: string }
+ *   Client -> Server:  vote:cast     { roomId: string, value: any }
+ *
+ *   Server -> Room:    timer:tick    { remaining: number, total: number, isRunning: boolean }
+ *   Server -> Room:    timer:stopped  { reason: 'manual' | 'expired' | 'all_voted' }
+ *   Server -> Room:    votes:roveal   { votes: Record<socketId, value> }
+ *   Server -> Room:    host:changed  { newHostSocketId: string }
+ *   Server -> Socket:  room:joined   { roomId: string, isHost: boolean }
+ */
 
-const app    = express();
-const server = http.createServer(app);
-const io     = new Server(server, {
-  cors: { origin: '*', methods: ['GET', 'POST'] },
+const http = require('http');
+const { Server } = require('socket.io');
+const {
+  joinRoom,
+  leaveRoom,
+  clearRoomTimer,
+  resetTimer,
+  castVote,
+  allVotesCast,
+  getRoom,
+  isHost,
+} = require('./roomManager');
+
+const PORT = process.env.PORT || 3001;
+
+// ------------------------------------------------------------------------
+// Bootstrap
+// ------------------------------------------------------------------------
+const server = http.createServer();
+const io = new Server(server, {
+  cors: {
+    origin: process.env.CLIENT_ORIGIN || '*',
+    methods: ['GET', 'POST'],
+  },
 });
 
-// ----------------------------------------------------------------
-// rooms[roomId] = {
-//   hostId   : string,
-//   members  : string[],
-//   votes    : { [socketId]: value },
-//   revealed : boolean,
-//   timer    : { status, duration, startTime, remaining, interval }
-// }
-const rooms = {};
+// ------------------------------------------------------------------------
+// Helpers
+// ------------------------------------------------------------------------
 
-function getOrCreateRoom(roomId) {
-  if (!rooms[roomId]) {
-    rooms[roomId] = {
-      hostId  : null,
-      members : [],
-      votes   : {},
-      revealed: false,
-      timer   : {
-        status   : 'idle',
-        duration : 60000,
-        startTime: null,
-        remaining: 60000,
-        interval : null,
-      },
-    };
-  }
-  return rooms[roomId];
+/**
+ * Reveals votes for a room, locks voting, and stops the timer.
+ * Emits timer:stopped and votes:reveal to the entire room.
+ */
+function revealVotes(room, reason) {
+  clearRoomTimer(room);
+  room.votingLocked = true;
+  io.to(room.id).emit('timer:stopped', { reason });
+  io.to(room.id).emit('votes:reveal', { votes: room.votes });
 }
 
-const msToSec = (ms) => Math.max(0, Math.ceil(ms / 1000));
-
-function emitTimerUpdate(roomId) {
-  const room = rooms[roomId];
-  if (!room) return;
-  const t = room.timer;
-  let remaining = (t.status === 'running')
-    ? t.remaining - (Date.now() - t.startTime)
-    : t.remaining;
-  remaining = Math.max(0, remaining);
-  io.to(roomId).emit('timer:update', {
-    status          : t.status,
-    remainingSeconds: msToSec(remaining),
-    duration        : t.duration,
-    hostId          : room.hostId,
+/**
+ * Starts the server-side countdown interval for a room.
+ */
+function startTimerInterval(room) {
+  // Emit an immediate tick so clients see the first state right away
+  io.to(room.id).emit('timer:tick', {
+    remaining: room.timerRemaining,
+    total: room.timerDuration,
+    isRunning: true,
   });
-}
 
-function clearTimerInterval(room) {
-  if (room.timer.interval) {
-    clearInterval(room.timer.interval);
-    room.timer.interval = null;
-  }
-}
+  room.timerInterval = setInterval(() => {
+    const currentRoom = getRoom(room.id);
+    if (!currentRoom || !currentRoom.timerRunning) return;
 
-function revealVotes(roomId) {
-  const room = rooms[roomId];
-  if (!room || room.revealed) return;
-  room.revealed = true;
-  clearTimerInterval(room);
-  room.timer.status = 'expired';
-  io.to(roomId).emit('votes:reveal', { votes: room.votes });
-  emitTimerUpdate(roomId);
-}
+    currentRoom.timerRemaining = Math.max(0, currentRoom.timerRemaining - 1);
 
-function checkAllVoted(roomId) {
-  const room = rooms[roomId];
-  if (!room || room.revealed) return;
-  const allVoted = room.members.every((id) => room.votes[id] !== undefined);
-  if (allVoted && room.members.length > 0) revealVotes(roomId);
-}
+    io.to(currentRoom.id).emit('timer:tick', {
+      remaining: currentRoom.timerRemaining,
+      total: currentRoom.timerDuration,
+      isRunning: true,
+    });
 
-function startTimerInterval(roomId) {
-  const room = rooms[roomId];
-  if (!room) return;
-  clearTimerInterval(room);
-  room.timer.interval = setInterval(() => {
-    const t       = room.timer;
-    const elapsed  = Date.now() - t.startTime;
-    const left     = t.remaining - elapsed;
-    emitTimerUpdate(roomId);
-    if (left <= 0) {
-      clearTimerInterval(room);
-      t.status    = 'expired';
-      t.remaining = 0;
-      io.to(roomId).emit('timer:expired');
-      revealVotes(roomId);
+    if (currentRoom.timerRemaining === 0) {
+      revealVotes(currentRoom, 'expired');
     }
   }, 1000);
 }
 
+// ------------------------------------------------------------------------
+// Socket handlers
+// ------------------------------------------------------------------------
 io.on('connection', (socket) => {
   console.log(`[connect] ${socket.id}`);
 
-  socket.on('join:room', ({ roomId, username }) => {
+  // Track which room this socket is in (for disconnect handling)
+  let currentRoomId = null;
+
+  // ----------------------------------------------------------------
+  // room:join
+  // ----------------------------------------------------------------
+  socket.on('room:join', ({ roomId }) => {
+    if (!roomId) return;
     socket.join(roomId);
-    const room = getOrCreateRoom(roomId);
-    room.members.push(socket.id);
-    socket.data.roomId   = roomId;
-    socket.data.username = username;
-    if (!room.hostId) room.hostId = socket.id;
+    currentRoomId = roomId;
+    const { room, isHost: hostFlag } = joinRoom(roomId, socket.id);
     socket.emit('room:joined', {
-      hostId  : room.hostId,
-      votes   : room.revealed ? room.votes : null,
-      revealed: room.revealed,
-      timer   : { status: room.timer.status, remainingSeconds: msToSec(room.timer.remaining), duration: room.timer.duration },
+      roomId,
+      isHost: hostFlag,
+      timerRemaining: room.timerRemaining,
+      timerDuration: room.timerDuration,
+      timerRunning: room.timerRunning,
     });
-    io.to(roomId).emit('room:members', { members: room.members, hostId: room.hostId });
   });
 
-  socket.on('vote:submit', ({ roomId, value }) => {
-    const room = rooms[roomId];
-    if (!room || room.revealed) return;
-    room.votes[socket.id] = value;
-    io.to(roomId).emit('vote:received', { socketId: socket.id });
-    checkAllVoted(roomId);
+  // ----------------------------------------------------------------
+  // timer:start   { duration: number }
+  // ----------------------------------------------------------------
+  socket.on('timer:start', ({ duration } = {}) => {
+    if (!currentRoomId) return;
+    if (!isHost(currentRoomId, socket.id)) return; // host-only
+
+    const room = getRoom(currentRoomId);
+    if (!room) return;
+    if (room.timerRunning) return; // already running
+
+    const d = Number(duration);
+    if (!Number.isFinite(d) || d < 10 || d > 300) return;
+
+    room.timerDuration = d;
+    room.timerRemaining = d;
+    room.timerRunning = true;
+    room.votingLocked = false;
+    room.votes = {};
+
+    startTimerInterval(room);
   });
 
-  socket.on('timer:configure', ({ roomId, durationSeconds }) => {
-    const room = rooms[roomId];
-    if (!room || room.hostId === socket.id === false) return;
-    if (room.timer.status === 'running') return;
-    const ms = Math.max(5, Math.min(600, durationSeconds)) * 1000;
-    room.timer.duration  = ms;
-    room.timer.remaining = ms;
-    emitTimerUpdate(roomId);
+  // ----------------------------------------------------------------
+  // timer:pause
+  // ----------------------------------------------------------------
+  socket.on('timer:pause', () => {
+    if (!currentRoomId) return;
+    if (!isHost(currentRoomId, socket.id)) return;
+
+    const room = getRoom(currentRoomId);
+    if (!room || !room.timerRunning) return;
+
+    clearRoomTimer(room);
+    io.to(room.id).emit('timer:tick', {
+      remaining: room.timerRemaining,
+      total: room.timerDuration,
+      isRunning: false,
+    });
+    io.to(room.id).emit('timer:stopped', { reason: 'manual' });
   });
 
-  socket.on('timer:start', ({ roomId }) => {
-    const room = rooms[roomId];
-    if (!room || room.hostId !== socket.id) return;
-    if (room.timer.status === 'running') return;
-    room.timer.startTime = Date.now();
-    room.timer.status    = 'running';
-    startTimerInterval(roomId);
-    emitTimerUpdate(roomId);
+  // ----------------------------------------------------------------
+  // timer:reset
+  // ----------------------------------------------------------------
+  socket.on('timer:reset', () => {
+    if (!currentRoomId) return;
+    if (!isHost(currentRoomId, socket.id)) return;
+
+    const room = getRoom(currentRoomId);
+    if (!room) return;
+
+    resetTimer(room);
+    io.to(room.id).emit('timer:tick', {
+      remaining: room.timerRemaining,
+      total: room.timerDuration,
+      isRunning: false,
+    });
   });
 
-  socket.on('timer:pause', ({ roomId }) => {
-    const room = rooms[roomId];
-    if (!room || room.hostId !== socket.id) return;
-    if (room.timer.status !== 'running') return;
-    room.timer.remaining = Math.max(0, room.timer.remaining - (Date.now() - room.timer.startTime));
-    room.timer.status    = 'paused';
-    clearTimerInterval(room);
-    emitTimerUpdate(roomId);
+  // ----------------------------------------------------------------
+  // vote:cast     { roomId: string, value: any }
+  // ----------------------------------------------------------------
+  socket.on('vote:cast', ({ roomId, value } = {}) => {
+    if (!roomId) return;
+    const accepted = castVote(roomId, socket.id, value);
+    if (!accepted) return;
+
+    const room = getRoom(roomId);
+    if (!room) return;
+
+    // AC6 - all members voted before timer expires
+    if (allVotesCast(room) && room.timerRunning) {
+      revealVotes(room, 'all_voted');
+    }
   });
 
-  socket.on('timer:reset', ({ roomId }) => {
-    const room = rooms[roomId];
-    if (!room || room.hostId !== socket.id) return;
-    clearTimerInterval(room);
-    room.timer.status    = 'idle';
-    room.timer.startTime = null;
-    room.timer.remaining = room.timer.duration;
-    room.votes    = {};
-    room.revealed = false;
-    io.to(roomId).emit('votes:reset');
-    emitTimerUpdate(roomId);
-  });
-
+  // ----------------------------------------------------------------
+  // disconnect - reassign host if needed
+  // ----------------------------------------------------------------
   socket.on('disconnect', () => {
     console.log(`[disconnect] ${socket.id}`);
-    const roomId = socket.data.roomId;
-    if (!roomId) return;
-    const room = rooms[roomId];
-    if (!room) return;
-    room.members = room.members.filter((id) => id !== socket.id);
-    delete room.votes[socket.id];
-    if (room.hostId === socket.id) room.hostId = room.members[0] ?? null;
-    if (room.members.length === 0) { clearTimerInterval(room); delete rooms[roomId]; return; }
-    io.to(roomId).emit('room:members', { members: room.members, hostId: room.hostId });
-    checkAllVoted(roomId);
+    if (!currentRoomId) return;
+    const { newHostSocketId } = leaveRoom(currentRoomId, socket.id);
+    if (newHostSocketId) {
+      io.to(currentRoomId).emit('host:changed', { newHostSocketId });
+    }
   });
 });
 
-const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => console.log(`Server listening on :${PORT}`));
+server.listen(PORT, () => {
+  console.log(`Planning Poker server listening on port ${PORT}`);
+});
+
+module.exports = { server, io }; // exported for testing
