@@ -1,67 +1,66 @@
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 
 /**
- * useTimer hook
+ * useTimer
  *
- * Subscribes to the ``timer:state`` and ``timer:expired`` Socket.io events
- * emitted by the server and exposes a single timer state object to
- * consumers.  No client-side setInterval -- all countdown values come
- * directly from the server to prevent drift.
+ * Subscribes to all server-emitted timer events and exposes reactive state.
  *
- * @typedef  {Object} TimerState
- * @property {'idle'|'running'|'paused'|'expired'} status
- * @property {number}  remaining  - ms remaining
- * @property {number}  duration   - total configured ms
- * @property {boolean} isExpired  - true when timer hit zero
- * @property {boolean} isWarning  - true during final 10s
- *
- * @param  {Object} socket - the active Socket.io client socket
- * @returns {TimerState}
+ * @param {import('socket.io-client').Socket} socket
+ * @param {number} initialDurationMs  Default 3 minutes
+ * @returns {{ remainingMs: number, timerState: string, isWarning: boolean }}
  */
-const DEFAULT_STATE = {
-  status:   'idle',
-  remaining: 60_000, // default 1 min until server sends real state
-  duration:  60_000,
-  isExpired: false,
-  isWarning: false,
-};
-
-export function useTimer(socket) {
-  const [state, setState] = useState(DEFAULT_STATE);
+export function useTimer(socket, initialDurationMs = 3 * 60 * 1000) {
+  const [remainingMs, setRemainingMs] = useState(initialDurationMs);
+  const [timerState, setTimerState] = useState('idle');
 
   useEffect(() => {
     if (!socket) return;
 
-    // Server broadcasts authoritative timer state every ~500ms
-    function handleState({ status, remaining, duration }) {
-      setState({
-        status,
-        remaining,
-        duration,
-        isExpired: status === 'expired',
-        isWarning: status === 'running' && remaining <= 10_000,
-      });
+    /** timer:tick -- main heartbeat from server */
+    function onTick({ remainingMs: ms, state }) {
+      setRemainingMs(ms);
+      setTimerState(state);
     }
 
-    // Server fires once when timer hits zero (or all votes cast)
-    function handleExpired() {
-      setState((prev) => ({
-        ...prev,
-        status:    'expired',
-        remaining: 0,
-        isExpired: true,
-        isWarning: false,
-      }));
+    /** timer:paused */
+    function onPaused({ remainingMs: ms }) {
+      setRemainingMs(ms);
+      setTimerState('paused');
     }
 
-    socket.on('timer:state', handleState);
-    socket.on('timer:expired', handleExpired);
+    /** timer:expired -- timer hit zero */
+    function onExpired() {
+      setRemainingMs(0);
+      setTimerState('idle');
+    }
+
+    /** timer:stopped -- early stop (e.g. all_voted) */
+    function onStopped() {
+      setTimerState('idle');
+    }
+
+    /** timer:reset -- host reset the timer */
+    function onReset({ durationMs }) {
+      setRemainingMs(durationMs);
+      setTimerState('idle');
+    }
+
+    socket.on('timer:tick', onTick);
+    socket.on('timer:paused', onPaused);
+    socket.on('timer:expired', onExpired);
+    socket.on('timer:stopped', onStopped);
+    socket.on('timer:reset', onReset);
 
     return () => {
-      socket.off('timer:state', handleState);
-      socket.off('timer:expired', handleExpired);
+      socket.off('timer:tick', onTick);
+      socket.off('timer:paused', onPaused);
+      socket.off('timer:expired', onExpired);
+      socket.off('timer:stopped', onStopped);
+      socket.off('timer:reset', onReset);
     };
   }, [socket]);
 
-  return state;
+  const isWarning = remainingMs <= 10000 && timerState === 'running';
+
+  return { remainingMs, timerState, isWarning };
 }
