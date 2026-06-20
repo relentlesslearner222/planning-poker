@@ -1,175 +1,220 @@
 /**
  * timerHandlers.js
  *
- * Registers all timer-related Socket.io event handlers for a given socket/room.
- * Room state shape (added fields):
- *   room.hostSocketId      {string}  - socket.id of the moderator/host
- *   room.timerDuration     {number}  - configured duration in ms
- *   room.timerStartedAt    {number}  - epoch ms when last started/resumed
- *   room.timerRemainingMs  {number}  - ms remaining at last pause (null when running)
- *   room.timerStatus       {string}  - 'idle' | 'running' | 'paused' | 'expired'
- *   room.timerInterval     {*}       - setInterval handle (server-internal)
+ * Registers all timer:* Socket.io event handlers on a connected socket.
+ * All timer state lives on the server; remaining time is computed from
+ * Date.now() so there is zero client-side drift.
+ *
+ * Expected room shape (additions):
+ *  {
+ *   hostSocketId : string,
+ *   timer: {
+ *     duration  : number,   // ms
+ *     status    : 'idle' | 'running' | 'paused' | 'expired',
+ *     startedAt : number,   // Date.now() when last (re)started
+ *     pausedAt  : number,   // Date.now() when paused
+ *     elapsed   : number,   // ms elapsed before most-recent pause
+ *   },
+ *   _timerInterval: ReturnType<typeof setInterval> | null,
+ * }
  */
 
 'use strict';
 
-/** Clears the server-side interval stored on a room object. */
-function clearRoomInterval(room) {
-  if (room && room.timerInterval != null) {
-    clearInterval(room.timerInterval);
-    room.timerInterval = null;
+const TICK_MS = 500; // broadcast cadence
+
+// ─── helpers ──────────────────────────────────────────────
+
+/**
+ * Compute how many milliseconds are left given current timer state.
+ * Pure function – safe to call at any time.
+ */
+function computeRemaining(timer) {
+  if (timer.status === 'idle')    return timer.duration;
+  if (timer.status === 'expired') return 0;
+  if (timer.status === 'paused') {
+    return Math.max(0, timer.duration - timer.elapsed);
   }
-}
-
-/** Returns true if every participant has submitted a vote. */
-function allParticipantsVoted(room) {
-  const participants = room.participants || [];
-  if (participants.length === 0) return false;
-  const votes = room.votes || {};
-  return participants.every((id) => votes[id] != null);
-}
-
-/** Reveals all votes and locks voting. */
-function revealVotes(room, io, roomId) {
-  room.votesRevealed = true;
-  room.votingLocked = true;
-  io.to(roomId).emit('votes:revealed', { votes: room.votes || {} });
+  // running
+  const elapsedNow = timer.elapsed + (Date.now() - timer.startedAt);
+  return Math.max(0, timer.duration - elapsedNow);
 }
 
 /**
- * Registers timer Socket.io event handlers on the given socket.
+ * Build the payload for a timer:state broadcast.
  */
-function registerTimerHandlers(socket, io, rooms, roomId) {
-  function isHost() {
-    const room = rooms[roomId];
-    return room && socket.id === room.hostSocketId;
+function buildStatePayload(timer) {
+  return {
+    status:    timer.status,
+    remaining: computeRemaining(timer),
+    duration:  timer.duration,
+  };
+}
+
+/**
+ * Stop the server-side setInterval tick, if running.
+ */
+function clearTick(room) {
+  if (room._timerInterval) {
+    clearInterval(room._timerInterval);
+    room._timerInterval = null;
   }
+}
 
-  function startWatchdog(room) {
-    clearRoomInterval(room);
-    room.timerInterval = setInterval(() => {
-      const r = rooms[roomId];
-      if (!r || r.timerStatus !== 'running') {
-        clearRoomInterval(r);
-        return;
-      }
-      const remaining = r.timerDuration - (Date.now() - r.timerStartedAt);
-      if (allParticipantsVoted(r)) {
-        clearRoomInterval(r);
-        r.timerStatus = 'idle';
-        revealVotes(r, io, roomId);
-        io.to(roomId).emit('timer:stopped');
-        return;
-      }
-      if (remaining <= 0) {
-        clearRoomInterval(r);
-        r.timerStatus = 'expired';
-        revealVotes(r, io, roomId);
-        io.to(roomId).emit('timer:expired');
-      }
-    }, 500);
-  }
+/**
+ * Broadcast timer:state to every socket in roomId.
+ */
+function broadcastState(io, roomId, timer) {
+  io.to(roomId).emit('timer:state', buildStatePayload(timer));
+}
 
-  // timer:start
-  socket.on('timer:start', ({ duration } = {}) => {
-    if (!isHost()) return;
-    const room = rooms[roomId];
-    if (!room) return;
+/**
+ * Start the server-side tick that drives timer:state broadcasts and
+ * fires timer:expired when remaining reaches 0.
+ */
+function startTick(io, roomId, room, onExpire) {
+  clearTick(room);
 
-    const secs = Math.min(300, Math.max(10, Number(duration) || 60));
-    const durationMs = secs * 1000;
+  room._timerInterval = setInterval(() => {
+    const remaining = computeRemaining(room.timer);
+    broadcastState(io, roomId, room.timer);
 
-    room.timerDuration = durationMs;
-    room.timerStartedAt = Date.now();
-    room.timerRemainingMs = null;
-    room.timerStatus = 'running';
-    room.votingLocked = false;
-    room.votesRevealed = false;
+    if (remaining <= 0) {
+      clearTick(room);
+      room.timer.status = 'expired';
+      io.to(roomId).emit('timer:expired');
+      if (typeof onExpire === 'function') onExpire();
+    }
+  }, TICK_MS);
+}
 
-    io.to(roomId).emit('timer:started', {
-      startedAt: room.timerStartedAt,
-      durationMs: room.timerDuration,
-    });
+// ─── guard helpers ───────────────────────────────────────────
 
-    startWatchdog(room);
+function isHost(room, socketId) {
+  return room && room.hostSocketId === socketId;
+}
+
+// ─── exported registration function ───────────────────────────────────────
+
+/**
+ * Call once per connected socket inside your `io.on('connection', ▖)` handler.
+ *
+ * @param {import('socket.io').Socket} socket
+ * @param {import('socket.io').Server}  io
+ * @param {Map<string, object>}         rooms   - shared room-state map
+ * @param {(roomId:string)=>void}       onAllVoted - callback to trigger
+ *                                                 early reveal when every
+ *                                                 participant has voted
+ */
+function registerTimerHandlers(socket, io, rooms, onAllVoted) {
+
+  // ▖ timer:configure ────────────────────────────────────────────────
+  // Payload: { duration: number }  (milliseconds)
+  socket.on('timer:configure', ({ duration } = {}) => {
+    const roomId = socket.roomId; // set by your join logic
+    const room   = rooms.get(roomId);
+    if (!room || !isHost(room, socket.id)) return;
+    if (typeof duration !== 'number' || duration <= 0) return;
+
+    // Reset any running timer before reconfiguring
+    clearTick(room);
+    room.timer = {
+      duration,
+      status:    'idle',
+      startedAt: 0,
+      pausedAt:  0,
+      elapsed:   0,
+    };
+
+    broadcastState(io, roomId, room.timer);
   });
 
-  // timer:pause
+  // ▖ timer:start ───────────────────────────────────────────────────
+  socket.on('timer:start', () => {
+    const roomId = socket.roomId;
+    const room   = rooms.get(roomId);
+    if (!room || !isHost(room, socket.id)) return;
+
+    const { timer } = room;
+    if (timer.status === 'running' || timer.status === 'expired') return;
+
+    timer.startedAt = Date.now();
+    timer.status    = 'running';
+
+    broadcastState(io, roomId, timer);
+    startTick(io, roomId, room, () => {
+      // onExpire: lock voting & auto-reveal (delegated to caller)
+      if (typeof onAllVoted === 'function') onAllVoted(roomId, true);
+    });
+  });
+
+  // ▖ imer:pause ─────────────────────────────────────────────────
   socket.on('timer:pause', () => {
-    if (!isHost()) return;
-    const room = rooms[roomId];
-    if (!room || room.timerStatus !== 'running') return;
+    const roomId = socket.roomId;
+    const room   = rooms.get(roomId);
+    if (!room || !isHost(room, socket.id)) return;
 
-    clearRoomInterval(room);
-    const elapsed = Date.now() - room.timerStartedAt;
-    room.timerRemainingMs = Math.max(0, room.timerDuration - elapsed);
-    room.timerStatus = 'paused';
+    const { timer } = room;
+    if (timer.status !== 'running') return;
 
-    io.to(roomId).emit('timer:paused', { remainingMs: room.timerRemainingMs });
+    timer.pausedAt = Date.now();
+    timer.elapsed += timer.pausedAt - timer.startedAt;
+    timer.status   = 'paused';
+
+    clearTick(room);
+    broadcastState(io, roomId, timer);
   });
 
-  // timer:resume
-  socket.on('timer:resume', () => {
-    if (!isHost()) return;
-    const room = rooms[roomId];
-    if (!room || room.timerStatus !== 'paused') return;
-
-    room.timerStartedAt = Date.now();
-    room.timerDuration = room.timerRemainingMs;
-    room.timerStatus = 'running';
-
-    io.to(roomId).emit('timer:resumed', {
-      startedAt: room.timerStartedAt,
-      remainingMs: room.timerRemainingMs,
-    });
-
-    startWatchdog(room);
-  });
-
-  // timer:reset
+  // ▖ timer:reset ────────────────────────────────────────────────
   socket.on('timer:reset', () => {
-    if (!isHost()) return;
-    const room = rooms[roomId];
-    if (!room) return;
+    const roomId = socket.roomId;
+    const room   = rooms.get(roomId);
+    if (!room || !isHost(room, socket.id)) return;
 
-    clearRoomInterval(room);
-    room.timerDuration = null;
-    room.timerStartedAt = null;
-    room.timerRemainingMs = null;
-    room.timerStatus = 'idle';
-    room.votingLocked = false;
-    room.votesRevealed = false;
-    room.votes = {};
+    clearTick(room);
+    room.timer = {
+      duration:  room.timer.duration, // preserve configured duration
+      status:    'idle',
+      startedAt: 0,
+      pausedAt:  0,
+      elapsed:   0,
+    };
 
-    io.to(roomId).emit('timer:reset');
+    broadcastState(io, roomId, room.timer);
   });
 }
 
-/** Initial timer state slice for a new room. */
-function initialTimerState() {
-  return {
-    hostSocketId: null,
-    timerDuration: null,
-    timerStartedAt: null,
-    timerRemainingMs: null,
-    timerStatus: 'idle',
-    timerInterval: null,
-  };
+// ─── host-reassignment helper (call on disconnect) ──────────────────────────────────
+
+/**
+ * If the disconnecting socket was the host, promote the next oldest member.
+ * Returns the new hostSocketId (or null if room is now empty).
+ *
+ * @param {object}   room
+ * @param {string}   disconnectedSocketId
+ * @param {string[]} remainingSocketIds  - ordered oldest-first
+ */
+function reassignHost(room, disconnectedSocketId, remainingSocketIds) {
+  if (room.hostSocketId !== disconnectedSocketId) return room.hostSocketId;
+  if (remainingSocketIds.length === 0) return null;
+  room.hostSocketId = remainingSocketIds[0];
+  return room.hostSocketId;
 }
 
-/** Builds the payload for a timer:sync event. */
-function timerSyncPayload(room) {
-  return {
-    status: room.timerStatus || 'idle',
-    startedAt: room.timerStartedAt || null,
-    durationMs: room.timerDuration || null,
-    remainingMs: room.timerRemainingMs || null,
-  };
+/**
+ * Call when ALL participants have voted.
+ * Stops the timer early, marks it expired, and emits timer:expired.
+ */
+function triggerEarlyReveal(io, roomId, room) {
+  if (!room || room.timer.status === 'expired') return;
+  clearTick(room);
+  room.timer.status = 'expired';
+  io.to(roomId).emit('timer:expired');
 }
 
 module.exports = {
   registerTimerHandlers,
-  initialTimerState,
-  timerSyncPayload,
-  clearRoomInterval,
+  reassignHost,
+  triggerEarlyReveal,
+  computeRemaining,
 };
