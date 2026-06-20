@@ -1,95 +1,117 @@
 import React, { useState, useCallback } from 'react';
 import Timer from './Timer';
-import { useTimer } from '../hooks/useTimer';
-
-const DEFAULT_DURATION = 60;
 
 /**
- * PokerRoom - orchestrates the voting workflow with a countdown timer.
- * Props: isHost, story, players, onValueSelected, onReveal
+ * PokerRoom
+ * Integrates the Timer component into the planning poker room.
+ * The timer auto-reveals all votes when it expires.
  */
-export default function PokerRoom({
-  isHost = false,
-  story = '',
-  players = [],
-  onValueSelected,
-  onReveal,
-}) {
-  const [votesRevealed, setVotesRevealed] = useState(false);
-  const [selectedCard, setSelectedCard] = useState(null);
+export default function PokerRoom() {
+  const CA_SCORES = ['?', '0', '1', '2', '3', '5', '8', '13', '21', '40', '80', '‟'];
 
-  const handleExpiry = useCallback(() => {
-    setVotesRevealed(true);
-    if (typeof onReveal === 'function') onReveal();
-  }, [onReveal]);
+  const [votes, setVotes] = useState({});
+  const [revealed, setRevealed] = useState(false);
+  const [currentUser] = useState('You');
+  const [notification, setNotification] = useState(null);
 
-  const { secondsLeft, isRunning, start, pause, reset } = useTimer(DEFAULT_DURATION, handleExpiry);
+  const showNotify = (msg) => {
+    setNotification(msg);
+    setTimeout(() => setNotification(null), 3000);
+  };
 
-  const handleResetRound = useCallback(() => {
-    reset();
-    setVotesRevealed(false);
-    setSelectedCard(null);
-  }, [reset]);
+  const handleVote = (card) => {
+    if (revealed) return;
+    setVotes((prev) => ({ ...prev, [currentUser]: card }));
+  };
 
-  const handleCardSelect = useCallback((card) => {
-    if (votesRevealed) return;
-    setSelectedCard(card);
-    if (typeof onValueSelected === 'function') onValueSelected(card);
-  }, [votesRevealed, onValueSelected]);
+  const handleReveal = useCallback(() => {
+    setRevealed(true);
+    showNotify('�c Votes revealed!');
+  }, []);
 
-  const FIB_CARDS = ['1', '2', '3', '5', '8', '13', '21', '?'];
+  // Fired by Timer onExpire
+  const handleTimerExpire = useCallback(() => {
+    handleReveal();
+    showNotify('⟰ Time is up! Votes auto-revealed.');
+  }, [handleReveal]);
+
+  const handleNewRound = () => {
+    setVotes({});
+    setRevealed(false);
+  };
 
   return (
-    <div className="poker-room">
-      <h2 className="story-title">{story || 'No story selected'}</h2>
+    <div style={{ display: 'flex', gap: '24px', padding: '24px', flexWrap: 'wrap' }}>
+      {/* ---- Left panel: Timer ---- */}
+      <div>
+        <h3>⚡️ Round Timer</h3>
+        <Timer defaultSeconds={60} onExpire={handleTimerExpire} />
+      </div>
 
-      <section className="timer-section">
-        <Timer
-          secondsLeft={secondsLeft}
-          totalSeconds={DEFAULT_DURATION}
-          isRunning={isRunning}
-          onStart={start}
-          onPause={pause}
-          onReset={handleResetRound}
-          isHost={isHost}
-        />
-      </section>
+      {/* ---- Right panel: Voting ---- */}
+      <div style={{ flex: 1 }}>
+        {notification && (
+          <div style={{
+            background: '#0d6efd', color: '#fff',
+            padding: '8px 16px', borderRadius: '6px', marginBottom: '12px'
+          }}>
+            {notification}
+          </div>
+        )}
 
-      <section className={`card-deck${votesRevealed ? ' locked' : ''}`}>
-        {FIB_CARDS.map((card) => (
+        <h3>🐔 Pick your card</h3>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
+          {CA_SCORES.map((card) => (
+            <button
+              key={card}
+              onClick={() => handleVote(card)}
+              disabled={revealed}
+              style={{
+                width: '56px', height: '80px',
+                fontSize: '1.2rem', fontWeight: '700',
+                border: votes[currentUser] === card ? '3px solid #0d6efd' : '2px solid #dee2e6',
+                borderRadius: '8px',
+                background: votes[currentUser] === card ? '#cfe2ff' : '#fff',
+                cursor: revealed ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {card}
+            </button>
+          ))}
+        </div>
+
+        {!revealed && (
           <button
-            key={card}
-            className={`poker-card${selectedCard === card ? ' selected' : ''}`}
-            onClick={() => handleCardSelect(card)}
-            disabled={votesRevealed}
+            onClick={handleReveal}
+            style={{
+              padding: '8px 16px', background: '#0d6efd', color: '#fff',
+              border: 'none', borderRadius: '6px', fontSize: '1rem', cursor: 'pointer'
+            }}
           >
-            {card}
+            Reveal Votes
           </button>
-        ))}
-      </section>
+        )}
 
-      {isHost && !votesRevealed && (
-        <button
-          className="btn-reveal"
-          onClick={() => { setVotesRevealed(true); if (onReveal) onReveal(); }}
-        >
-          Reveal Votes
-        </button>
-      )}
-
-      {votesRevealed && players.length > 0 && (
-        <section className="player-votes">
-          <h3>Votes</h3>
-          <ul>
-            {players.map((p) => (
-              <li key={p.id}>
-                <span>{p.name}</span>
-                <strong>{p.vote != null ? p.vote : '-'}</strong>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+        {revealed && (
+          <div>
+            <h4>Results</h4>
+            <ul>
+              {Object.entries(votes).map(([user, vote]) => (
+                <li key={user}>{user}: <strong>{vote}</strong></li>
+              ))}
+            </ul>
+            <button
+              onClick={handleNewRound}
+              style={{
+                marginTop: '8px', padding: '6px 12px', background: '#28a745', color: '#fff',
+                border: 'none', borderRadius: '6px', cursor: 'pointer'
+              }}
+            >
+              New Round
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
