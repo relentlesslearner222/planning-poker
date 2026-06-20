@@ -1,57 +1,91 @@
-import React, { useState, useEffect } from 'react';
-import './timer.css';
+import React from 'react';
 
 /**
- * TimerDisplay
+ * TimerDisplay.jsx
  *
  * Props:
- *   endTimestamp   {number|null}   UTC ms when timer reaches zero
- *   status         {'loading'|'running'|'paused'|'stopped'}
- *   pausedRemaining {number|null}  ms remaining when paused
- *   durationSeconds {number}       fallback display when stopped
+ *   timerSync: { remaining: number, running: boolean, totalDuration: number }
+ *   isHost: boolean (unused in display but passed for flexibility)
  */
-export default function TimerDisplay(props) {
-  const { endTimestamp, status, pausedRemaining, durationSeconds = 60 } = props;
 
-  // local tick just to re-render every ~200ms --- value is always
-  // derived from endTimestamp, so client drift is impossible (AC4)
-  const [, forceRender] = useState(0);
+const RADIUS = 54;    // SVG circle radius
+const CIRCUMFERE8CE = 2 * Math.PI * RADIUS;
 
-  useEffect(() => {
-    if (status !== 'running') return;
-    const id = setInterval(() => forceRender((n) => n + 1), 200);
-    return () => clearInterval(id);
-  }, [status, endTimestamp]);
-
-  // Derive remaining seconds
-  let remainingMs = 0;
-  if (status === 'running' && endTimestamp) {
-    remainingMs = Math.max(0, endTimestamp - Date.now());
-  } else if (status === 'paused' && pausedRemaining != null) {
-    remainingMs = pausedRemaining;
-  } else {
-    remainingMs = durationSeconds * 1000;
+const styles = `
+  .timer-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
   }
+  .timer-text {
+    font-size: 2.2rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    color: #222;
+  }
+  .timer-text.pulse-red {
+    color: #e03131;
+    animation: pulse 1s ease-in-out infinite;
+  }
+  .arc-stroke.pulse-red {
+    stroke: #e03131;
+    animation: pulse 1s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+`;
 
-  const totalSeconds = Math.ceil(remainingMs / 1000);
-  const minutes      = Math.floor(totalSeconds / 60);
-  const seconds      = totalSeconds % 60;
-  const display      = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+function formatTime(ms) {
+  const totalSecs = Math.ceil(ms / 1000);
+  const mins = Math.floor(totalSecs / 60);
+  const secs = totalSecs % 60;
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
 
-  // AC7: red pulse during final 10s
-  const isCritical = status === 'running' && totalSeconds <= 10;
-  const className   = ['timer-display', isCritical ? 'timer--critical' : ''].filter(Boolean).join(' ');
+export default function TimerDisplay({ timerSync, isHost }) {
+  if (!timerSync) return null;
+
+  const { remaining = 0, totalDuration = 60000 } = timerSync;
+  const isWarning = remaining <= 10000 && remaining > 0;
+  const progress = totalDuration > 0 ? remaining / totalDuration : 0;
+  const offset = CIRCUMFERENCE * (1 - progress);
 
   return (
-    <div className="timer-wrapper">
-      <span className={className} aria-live="polite">
-        {display}
-      </span>
-      <span className="timer-status-label">
-        {status === 'running' && '‎ Running'}
-        {status === 'paused'  && '‎ Paused'}
-        {status === 'stopped' && '‎ Stopped'}
-      </span>
-    </div>
+    <>
+      <style>{styles}</style>
+      <div className="timer-wrapper">
+        <svg width="130" height="130" viewBox="0 0 130 130">
+          {/* Background track */}
+          <circle
+            cx="65"
+            cy="65"
+            r={RADIUS}
+            fill="none"
+            stroke="#e9ecef"
+            strokeWidth="8"
+          />
+          {/* Progress arc */}
+          <circle
+            className={`arc-stroke${isWarning ? ' pulse-red' : ''}`}
+            cx="65"
+            cy="65"
+            r={RADIUS}
+            fill="none"
+            stroke={isWarning ? '#e03131' : '#428ca8'}
+            strokeWidth="8"
+            strokeDasharray={CIRCUMFERENCE}
+            strokeDashoffset={offset}
+            strokeLinecap="round"
+            transform="rotate(-90 65 65)"
+          />
+        </svg>
+        <span className={`timer-text${isWarning ? ' pulse-red' : ''}`}>
+          {formatTime(remaining)}
+        </span>
+      </div>
+    </>
   );
 }
