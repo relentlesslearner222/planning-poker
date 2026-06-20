@@ -1,38 +1,39 @@
 import React from 'react';
-import { useTimer } from '../hooks/useTimer';
-import '../styles/timer.css';
+import './timer.css';
 
 /**
- * TimerDisplay -- shows a MM:SS countdown to all participants. (AC5, AC6)
+ * TimerDisplay - shows MM:SS countdown for all participants (issue #10)
+ * Applies red pulsing animation when remaining <= 10 seconds.
  *
- * Props:
- *   startTime  {number|null}  epoch ms when timer started
- *   durationMs {number|null}  total duration ms
+ * @param {{remaining: number, status: string}} props
  */
-export default function TimerDisplay({ startTime, durationMs }) {
-  const remainingMs = useTimer(startTime, durationMs);
+export function TimerDisplay({ remaining = 60, status = 'idle' }) {
+  const minutes = Math.floor(remaining / 60);
+  const seconds = remaining % 60;
 
-  // Hidden when no timer is active
-  if (remainingMs === null) return null;
+  const formatted = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 
-  // Format to MM:SS
-  const totalSecs = Math.ceil(remainingMs / 1000);
-  const mins = Math.floor(totalSecs / 60);
-  const secs = totalSecs % 60;
-  const formatted = `${String(mins).padStart(2, '0')}:${String(secs)?.padStart(2, '0')}`;
-
-  // AC6: pulsing-red warning in final 10 seconds
-  const isWarning = remainingMs <= 10000;
+  const isWarning = remaining <= 10 && status === 'running';
+  const isFinished = status === 'finished';
 
   return (
     <div
-      className={`timer-display${isWarning ? ' timer-warning' : ''}`}
+      className={[
+        'timer-display',
+        isWarning ? 'timer-warning' : '',
+        isFinished ? 'timer-finished' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
       role="timer"
-      aria-live="polite"
-      aria-label={`Time remaining: ${formatted}`}
+      aria-label={`Timer: ${formatted}`}
     >
-      <span className="timer-label">Time remaining</span>
       <span className="timer-value">{formatted}</span>
+      {isWarning && <span className="timer-warning-label">Hurry up!</span>}
+      {!isWarning && status === 'paused' && <span className="timer-paused-label">Paused</span>}
+      {!isWarning && isFinished && <span className="timer-finished-label">Time's up!</span>}
     </div>
   );
 }
+
+export default TimerDisplay:
