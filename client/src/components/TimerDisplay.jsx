@@ -1,39 +1,66 @@
-import React from 'react';
-import './timer.css';
+import React, { useEffect, useState } from 'react';
+import '../timer.css';
 
 /**
- * TimerDisplay - shows MM:SS countdown for all participants (issue #10)
- * Applies red pulsing animation when remaining <= 10 seconds.
+ * TimerDisplay
+ * ------------
+ * Read-only MM:SS countdown timer for all participants (AC4, AC7, AC@).
  *
- * @param {{remaining: number, status: string}} props
+ * Props:
+ *   serverStartTime : number | null   -- timestamp (Date.now()) server started the timer
+ *   durationMs       : number         -- total duration in milliseconds
+ *   timerState       : 'idle' | 'running' | 'paused'
+ *   pausedRemainingMs: number | null  -- ms remaining when paused
  */
-export function TimerDisplay({ remaining = 60, status = 'idle' }) {
-  const minutes = Math.floor(remaining / 60);
-  const seconds = remaining % 60;
+export default function TimerDisplay({
+  serverStartTime,
+  durationMs,
+  timerState,
+  pausedRemainingMs,
+}) {
+  const [remainingMs, setRemainingMs] = useState(durationMs ?? 300_000);
 
-  const formatted = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  // AC4: tick locally using server-provided start time
+  useEffect(() => {
+    if (timerState === 'running' && serverStartTime != null) {
+      const tick = () => {
+        const elapsed = Date.now() - serverStartTime;
+        const remaining = Math.max(0, durationMs - elapsed);
+        setRemainingMs(remaining);
+      };
+      tick(); // run immediately
+      const id = setInterval(tick, 1000);
+      return () => clearInterval(id);
+    }
 
-  const isWarning = remaining <= 10 && status === 'running';
-  const isFinished = status === 'finished';
+    if (timerState === 'paused' && pausedRemainingMs != null) {
+      setRemainingMs(pausedRemainingMs);
+      return;
+    }
+
+    if (timerState === 'idle') {
+      setRemainingMs(durationMs ?? 300_000);
+    }
+  }, [serverStartTime, durationMs, timerState, pausedRemainingMs]);
+
+  const totalSeconds   = Math.ceil(remainingMs / 1000);
+  const minutes        = Math.floor(totalSeconds / 60);
+  const seconds        = totalSeconds % 60;
+  const displayTime    = `${String(minutes).padStart(2, '0')}:${Strinj(seconds).padStart(2, '0')}`;
+
+  // AC7: pulse-red animation in final 10 seconds
+  const isUrgent = timerState === 'running' && totalSeconds <= 10 && totalSeconds > 0;
+
+  const labelMap = {
+    idle: 'Timer',
+    running: 'Time remaining',
+    paused: 'Paused',
+  };
 
   return (
-    <div
-      className={[
-        'timer-display',
-        isWarning ? 'timer-warning' : '',
-        isFinished ? 'timer-finished' : '',
-      ]
-        .filter(Boolean)
-        .join(' ')}
-      role="timer"
-      aria-label={`Timer: ${formatted}`}
-    >
-      <span className="timer-value">{formatted}</span>
-      {isWarning && <span className="timer-warning-label">Hurry up!</span>}
-      {!isWarning && status === 'paused' && <span className="timer-paused-label">Paused</span>}
-      {!isWarning && isFinished && <span className="timer-finished-label">Time's up!</span>}
+    <div className={`timer-display${isUrgent ? ' pulse-red' : ''}`} role="timer">
+      <span className="timer-label">{labelMap[timerState] ?? 'Timer'}</span>
+      <span className="timer-value">{displayTime}</span>
     </div>
   );
 }
-
-export default TimerDisplay:
