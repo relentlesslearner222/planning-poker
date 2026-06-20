@@ -1,66 +1,65 @@
+// timer.js
+// Core countdown timer for timer-based Planning Poker (issue #7).
+
 /**
- * timer.js
- * Core countdown timer logic for Issue #7.
+ * Creates a countdown timer.
+ *
+ * @param {object}   options
+ * @param {number}   options.durationSeconds  - Total countdown duration in seconds.
+ * @param {function} [options.onTick]         - Called every second with remaining seconds.
+ * @param {function} [options.onExpire]       - Called when the timer reaches 0.
+ * @returns {{ start, pause, reset, getRemaining, isRunning }}
  */
-
-export class CountdownTimer {
-  constructor(durationSeconds = 60, onTick = () => null, onExpire = () => null) {
-    this.durationSeconds = durationSeconds;
-    this.remaining = durationSeconds;
-    this.onTick = onTick;
-    this.onExpire = onExpire;
-    this._intervalId = null;
-    this.isRunning = false;
+export function createTimer({ durationSeconds, onTick, onExpire }) {
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+    throw new RangeError('durationSeconds must be a positive finite number');
   }
 
-  start() {
-    if (this.isRunning || this.remaining <= 0) return;
-    this.isRunning = true;
-    this._intervalId = setInterval(() => {
-      this.remaining -= 1;
-      this.onTick(this.remaining);
-      if (this.remaining <= 0) {
-        this._clearInterval();
-        this.isRunning = false;
-        this.onExpire();
+  let remaining = durationSeconds;
+  let intervalId = null;
+
+  function tick() {
+    remaining -= 1;
+    if (typeof onTick === 'function') onTick(remaining);
+    if (remaining <= 0) {
+      clearInterval(intervalId);
+      intervalId = null;
+      remaining = 0;
+      if (typeof onExpire === 'function') onExpire();
+    }
+  }
+
+  return {
+    start() {
+      if (intervalId !== null) return;
+      if (remaining <= 0) return;
+      intervalId = setInterval(tick, 1000);
+    },
+    pause() {
+      if (intervalId === null) return;
+      clearInterval(intervalId);
+      intervalId = null;
+    },
+    reset() {
+      if (intervalId !== null) {
+        clearInterval(intervalId);
+        intervalId = null;
       }
-    }, 1000);
-  }
-
-  pause() {
-    if (!this.isRunning) return;
-    this._clearInterval();
-    this.isRunning = false;
-  }
-
-  reset(newDuration) {
-    this._clearInterval();
-    this.isRunning = false;
-    if (typeof newDuration === 'number' && newDuration > 0) {
-      this.durationSeconds = newDuration;
-    }
-    this.remaining = this.durationSeconds;
-    this.onTick(this.remaining);
-  }
-
-  getFormattedTime() {
-    const minutes = Math.floor(this.remaining / 60).toString().padStart(2, '0');
-    const seconds = (this.remaining % 60).toString().padStart(2, '0');
-    return `${minutes}:${seconds}`;
-  }
-
-  _clearInterval() {
-    if (this._intervalId !== null) {
-      clearInterval(this._intervalId);
-      this._intervalId = null;
-    }
-  }
+      remaining = durationSeconds;
+    },
+    getRemaining() { return remaining; },
+    isRunning() { return intervalId !== null; },
+  };
 }
 
-export const TIMER_PRESETS = [
-  { label: '30 sec',  value: 30  },
-  { label: '1 min',   value: 60  },
-  { label: '2 min',   value: 120 },
-  { label: '3 min',   value: 180 },
-  { label: '5 min',   value: 300 },
-];
+/**
+ * Formats seconds as MM:SS.
+ * @param {number} totalSeconds
+ * @returns {string}
+ */
+export function formatTime(totalSeconds) {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const mm = String(Math.floor(s / 60)).padStart(2, '0');
+  const ss = String(s % 60).padStart(2, '0');
+  return `${mm}:${ss}`;
+}
