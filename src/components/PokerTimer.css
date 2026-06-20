@@ -1,0 +1,85 @@
+.poker-timer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: #1e1e2e;
+  border-radius: 12px;
+  padding: 16px 16px 12px;
+  min-width: 140px;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+  transition: background 0.3s;
+}
+
+.poker-timer.warn {
+  background: #4a1a0f;
+  animation: pulseWarn 0.8s infinite alternate;
+}
+
+.poker-timer.expired {
+  background: #2a0a0a;
+}
+
+@keyframes pulseWarn {
+  from { box-shadow: 0 0 6px 2px rgba(240, 80, 40, 0.4); }
+  to   { box-shadow: 0 0 16px 6px rgba(240, 80, 40, 0.9); }
+}
+
+.timer-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.timer-icon {
+  font-size: 1.4rem;
+}
+
+.timer-text {
+  font-size: 2.2rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #e2e2fa;
+  font-family: 'Courier New', monospace;
+}
+
+.poker-timer.warn .timer-text {
+  color: #ff6440;
+}
+
+.timer-expired-msg {
+  color: #ff6440;
+  font-size: 0.85rem;
+  margin: 4px 0 0;
+}
+
+.timer-controls {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.btn-primary,
+.btn-secondary {
+  padding: 5px 12px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: opacity 0.2s;
+}
+
+.btn-primary {
+  background: #6c63ff;
+  color: #fff;
+}
+
+.btn-primary:hover { opacity: 0.85; }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-secondary {
+  background: #343450;
+  color: #ccc;
+}
+
+.btn-secondary:hover { opacity: 0.85; }
