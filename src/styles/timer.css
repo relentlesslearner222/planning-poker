@@ -1,0 +1,103 @@
+//* timer.css -- Planning Poker timer styles */
+
+.timer-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 24px;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+  max-width: 320px;
+  margin: 0 auto;
+}
+
+.timer-display {
+  font-size: 2.5rem;
+  font-weight: 700;
+  font-family: 'Courier New', Courier, monospace;
+  color: #1e293b;
+  letter-spacing: 2px;
+  transition: color 0.3s;
+}
+
+.timer-display.timer-warning {
+  color: #ef4444;
+  animation: timer_pulse 1s infinite;
+}
+
+@keyframes timer_pulse {
+  0%   { opacity: 1; }
+  50%  { opacity: 0.4; }
+  100% { opacity: 1; }
+}
+
+.timer-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.timer-controls label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+.timer-input {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 1rem;
+  text-align: center;
+}
+
+.timer-btn {
+  width: 100%;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, opacity 0.2s;
+}
+
+.timer-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.timer-btn--start {
+  background: #22c55e;
+  color: #ffffff;
+}
+
+.timer-btn--start:hover:not(:disabled) {
+  background: #16a34a;
+}
+
+.timer-btn--reset {
+  background: #f8943c;
+  color: #ffffff;
+}
+
+.timer-btn--reset:hover:not(:disabled) {
+  background: #ea580c;
+}
+
+.timer-status {
+  font-size: 0.8rem;
+  color: #64748b;
+  font-style: italic;
+}
+
+.timer-status--expired {
+  color: #ef4444;
+  font-weight: 700;
+  font-style: normal;
+}
