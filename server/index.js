@@ -1,209 +1,240 @@
-// server/index.js — Planning Poker with Server-Synchronized Timer
-// Issue #10: Timer-Based Planning Poker
+/**
+ * server/index.js
+ *
+ * Planning Poker — Server Entry Point
+ *
+ * Timer feature additions (issue #10):
+ *  - Room state extended with `hostSocketId` and `timer` fields.
+ *  - First socket to join a room becomes the host (AC1).
+ *  - If host disconnects the next-oldest member is promoted (AC1).
+ *  - Handles `timer:start`  → broadcasts `timer:started`  (AC3).
+ *  - Handles `timer:reset`   → broadcasts `timer:reset`    (AC8).
+ *  - Server-side setTimeout fires `timer:expired`        (AC5).
+ *  - All-voted path stops timer early and reveals votes   (AC6).
+ *  - New joiners receive current timer state in room:sync (AC10).
+ */
 
 const express = require('express');
-const http = require('http');
+const http    = require('http');
 const { Server } = require('socket.io');
-const path = require('path');
 
-const app = express();
-const httpServer = http.createServer(app);
-const io = new Server(httpServer, { cors: { origin: '*' } });
+const app    = express();
+const server = http.createServer(app);
+const io     = new Server(server, {
+  cors: { origin: '*', methods: ['GET', 'POST'] },
+});
 
-// ─ In-memory room store
-// rooms[roomId] = {
-//   members: [{ socketId, name, vote }],  // ordered by join time
-//   hostSocketId: string | null,
-//   revealed: boolean,
-//   timer: { duration, remaining, status, startedAt },
-//   intervalId: ReturnType<setInterval> | null,
-// }
-const rooms = {};
+// --------------------------------------------------------------------------
+// In-memory room store
+// --------------------------------------------------------------------------
 
-function defaultTimer() {
-  return { duration: 60, remaining: 60, status: 'idle', startedAt: null };
-}
+/**
+ * rooms: Map<roomId, RoomState>
+ *
+ * RoomState shape:
+ * {
+ *   id:            string,
+ *   participants:  Map<socketId, { name: string, vote: string|null }>,
+ *   hostSocketId:  string | null,
+ *   revealed:      boolean,
+ *   timer: {
+ *     status:     'idle' | 'running' | 'expired',
+ *     endsAt:     number | null,
+ *     timeoutRef: ReturnType<typeof setTimeout> | null
+ *   }
+ * }
+ */
+const rooms = new Map();
+
+// --------------------------------------------------------------------------
+// Helpers
+// --------------------------------------------------------------------------
 
 function getOrCreateRoom(roomId) {
-  if (!rooms[roomId]) {
-    rooms[roomId] = {
-      members: [],
+  if (!rooms.has(roomId)) {
+    rooms.set(roomId, {
+      id: roomId,
+      participants: new Map(),
       hostSocketId: null,
       revealed: false,
-      timer: defaultTimer(),
-      intervalId: null,
-    };
+      timer: {
+        status:     'idle',
+        endsAt:     null,
+        timeoutRef: null,
+      },
+    });
   }
-  return rooms[roomId];
+  return rooms.get(roomId);
+}
+
+function buildParticipantList(room) {
+  return Array.from(room.participants.entries()).map(([id, p]) => ({
+    socketId: id,
+    name:     p.name,
+    vote:     room.revealed ? p.vote : (p.vote !== null ? '\u2713' : null),
+  }));
 }
 
 function broadcastRoomState(roomId) {
-  const room = rooms[roomId];
+  const room = rooms.get(roomId);
   if (!room) return;
-  io.to(roomId).emit('room:state', {
-    members: room.members.map(({ socketId, name, vote }) => ({
-      socketId,
-      name,
-      vote: room.revealed ? vote : vote != null ? '?' : null,
-    })),
+  io.to(roomId).emit('room:update', {
+    participants: buildParticipantList(room),
+    revealed:     room.revealed,
     hostSocketId: room.hostSocketId,
-    revealed: room.revealed,
     timer: {
-      duration: room.timer.duration,
-      remaining: room.timer.remaining,
       status: room.timer.status,
+      endsAt: room.timer.endsAt,
     },
   });
 }
 
-function startRoomTimer(roomId) {
-  const room = rooms[roomId];
+/**
+ * revealVotes -- marks the room as revealed and broadcasts.
+ * Called on timer expiry (AC5) and all-voted early-finish (AC6).
+ */
+function revealVotes(roomId) {
+  const room = rooms.get(roomId);
   if (!room) return;
-  if (room.intervalId) { clearInterval(room.intervalId); room.intervalId = null; }
-  room.timer.startedAt = Date.now();
-  room.timer.status = 'running';
+  room.revealed = true;
 
-  room.intervalId = setInterval(() => {
-    const r = rooms[roomId];
-    if (!r) { clearInterval(room.intervalId); return; }
-
-    const elapsed = Math.floor((Date.now() - r.timer.startedAt) / 1000);
-    const remaining = Math.max(0, r.timer.remaining - elapsed);
-
-    io.to(roomId).emit('timer:tick', { remaining, status: r.timer.status });
-
-    if (remaining <= 0) {
-      clearInterval(r.intervalId);
-      r.intervalId = null;
-      r.timer.remaining = 0;
-      r.timer.status = 'expired';
-      r.revealed = true;
-      io.to(roomId).emit('timer:expired');
-      broadcastRoomState(roomId);
-    } else {
-      r.timer.remaining = remaining;
-      r.timer.startedAt = Date.now();
-    }
-  }, 1000);
-}
-
-function stopRoomTimer(roomId) {
-  const room = rooms[roomId];
-  if (!room) return;
-  if (room.intervalId) { clearInterval(room.intervalId); room.intervalId = null; }
-}
-
-function checkAllVoted(roomId) {
-  const room = rooms[roomId];
-  if (!room || room.revealed) return;
-  const allVoted = room.members.length > 0 && room.members.every((m) => m.vote != null);
-  if (allVoted) {
-    stopRoomTimer(roomId);
-    if (room.timer.status === 'running') room.timer.status = 'idle';
-    room.revealed = true;
-    broadcastRoomState(roomId);
+  if (room.timer.timeoutRef) {
+    clearTimeout(room.timer.timeoutRef);
+    room.timer.timeoutRef = null;
   }
+  room.timer.status = 'expired';
+
+  io.to(roomId).emit('timer:expired');
+  broadcastRoomState(roomId);
 }
 
-ie.on('connection', (socket) => {
-  console.log(`[socket] connected: ${socket.id}`);
+/**
+ * checkAllVoted -- if every participant has voted, stop timer and reveal.
+ * Implements AC6.
+ */
+function checkAllVoted(roomId) {
+  const room = rooms.get(roomId);
+  if (!room || room.revealed) return;
+  if (room.participants.size === 0) return;
 
-  socket.on('room:join', ({ roomId, name }) => {
+  const allVoted = Array.from(room.participants.values()).every(
+    (p) => p.vote !== null
+  );
+  if (allVoted) revealVotes(roomId);
+}
+
+// --------------------------------------------------------------------------
+// Socket.io event handlers
+// --------------------------------------------------------------------------
+
+io.on('connection', (socket) => {
+  let currentRoomId = null;
+
+  // join:room
+  socket.on('join:room', ({ roomId, name }) => {
     if (!roomId || !name) return;
+    currentRoomId = roomId;
     socket.join(roomId);
     const room = getOrCreateRoom(roomId);
-    if (room.members.length === 0) room.hostSocketId = socket.id;
-    if (!room.members.find((m) => m.socketId === socket.id)) {
-      room.members.push({ socketId: socket.id, name, vote: null });
+
+    // First joiner becomes host (AC1)
+    if (room.participants.size === 0) {
+      room.hostSocketId = socket.id;
     }
-    socket.emit('host:assigned', { isHost: socket.id === room.hostSocketId });
+    room.participants.set(socket.id, { name, vote: null });
+
+    // Send full state snapshot to new joiner (AC10)
+    socket.emit('room:sync', {
+      roomId,
+      participants:  buildParticipantList(room),
+      revealed:      room.revealed,
+      hostSocketId:  room.hostSocketId,
+      timer: {
+        status: room.timer.status,
+        endsAt: room.timer.endsAt,
+      },
+    });
     broadcastRoomState(roomId);
   });
 
-  socket.on('vote:submit', ({ roomId, vote }) => {
-    const room = rooms[roomId];
+  // vote:submit
+  socket.on('vote:submit', ({ vote }) => {
+    if (!currentRoomId) return;
+    const room = rooms.get(currentRoomId);
     if (!room || room.revealed) return;
-    const member = room.members.find((m) => m.socketId === socket.id);
-    if (member) { member.vote = vote; broadcastRoomState(roomId); checkAllVoted(roomId); }
+    const participant = room.participants.get(socket.id);
+    if (!participant) return;
+    participant.vote = vote;
+    broadcastRoomState(currentRoomId);
+    checkAllVoted(currentRoomId); // AC6
   });
 
-  socket.on('votes:reveal', ({ roomId }) => {
-    const room = rooms[roomId];
+  // timer:start (AC3)
+  socket.on('timer:start', ({ durationSeconds }) => {
+    if (!currentRoomId) return;
+    const room = rooms.get(currentRoomId);
     if (!room) return;
-    stopRoomTimer(roomId);
-    room.revealed = true;
-    broadcastRoomState(roomId);
-  });
-
-  socket.on('round:reset', ({ roomId }) => {
-    const room = rooms[roomId];
-    if (!room) return;
-    stopRoomTimer(roomId);
-    room.members.forEach((m) => (m.vote = null));
-    room.revealed = false;
-    room.timer = defaultTimer();
-    broadcastRoomState(roomId);
-  });
-
-  // AC2, AC3 -- host-only timer controls
-  socket.on('timer:configure', ({ roomId, duration }) => {
-    const room = rooms[roomId];
-    if (!room || socket.id !== room.hostSocketId) return;
-    const clamped = Math.min(300, Math.max(10, Number(duration) || 60));
-    stopRoomTimer(roomId);
-    room.timer = { duration: clamped, remaining: clamped, status: 'idle', startedAt: null };
-    broadcastRoomState(roomId);
-  });
-
-  socket.on('timer:start', ({ roomId }) => {
-    const room = rooms[roomId];
-    if (!room || socket.id !== room.hostSocketId) return;
+    if (room.hostSocketId !== socket.id) return;
     if (room.timer.status === 'running') return;
-    if (room.timer.status === 'idle' || room.timer.status === 'expired') {
-      room.timer.remaining = room.timer.duration;
+
+    const duration = Math.min(300, Math.max(10, Number(durationSeconds) || 60));
+    const endsAt   = Date.now() + duration * 1000;
+
+    if (room.timer.timeoutRef) clearTimeout(room.timer.timeoutRef);
+
+    room.timer.status     = 'running';
+    room.timer.endsAt     = endsAt;
+    room.timer.timeoutRef = setTimeout(() => {
+      revealVotes(currentRoomId);
+    }, duration * 1000);
+
+    io.to(currentRoomId).emit('timer:started', { endsAt });
+    broadcastRoomState(currentRoomId);
+  });
+
+  // timer:reset (AC8)
+  socket.on('timer:reset', () => {
+    if (!currentRoomId) return;
+    const room = rooms.get(currentRoomId);
+    if (!room) return;
+    if (room.hostSocketId !== socket.id) return;
+
+    if (room.timer.timeoutRef) {
+      clearTimeout(room.timer.timeoutRef);
+      room.timer.timeoutRef = null;
     }
-    startRoomTimer(roomId);
-    broadcastRoomState(roomId);
+    room.timer.status = 'idle';
+    room.timer.endsAt = null;
+    room.revealed = false;
+    room.participants.forEach((p) => { p.vote = null; });
+
+    io.to(currentRoomId).emit('timer:reset');
+    broadcastRoomState(currentRoomId);
   });
 
-  socket.on('timer:pause', ({ roomId }) => {
-    const room = rooms[roomId];
-    if (!room || socket.id !== room.hostSocketId) return;
-    if (room.timer.status !== 'running') return;
-    stopRoomTimer(roomId);
-    room.timer.status = 'paused';
-    broadcastRoomState(roomId);
-  });
-
-  socket.on('timer:reset', ({ roomId }) => {
-    const room = rooms[roomId];
-    if (!room || socket.id !== room.hostSocketId) return;
-    stopRoomTimer(roomId);
-    room.timer = { duration: room.timer.duration, remaining: room.timer.duration, status: 'idle', startedAt: null };
-    broadcastRoomState(roomId);
-  });
-
+  // disconnect (AC1 host re-election)
   socket.on('disconnect', () => {
-    console.log(`[socket] disconnected: ${socket.id}`);
-    for (const [roomId, room] of Object.entries(rooms)) {
-      const idx = room.members.findIndex((m) => m.socketId === socket.id);
-      if (idx === -1) continue;
-      room.members.splice(idx, 1);
-      if (room.hostSocketId === socket.id) {
-        room.hostSocketId = room.members.length > 0 ? room.members[0].socketId : null;
-        if (room.hostSocketId) io.to(room.hostSocketId).emit('host:assigned', { isHost: true });
-      }
-      if (room.members.length === 0) {
-        stopRoomTimer(roomId); delete rooms[roomId];
-      } else {
-        broadcastRoomState(roomId);
-      }
+    if (!currentRoomId) return;
+    const room = rooms.get(currentRoomId);
+    if (!room) return;
+
+    room.participants.delete(socket.id);
+
+    if (room.participants.size === 0) {
+      if (room.timer.timeoutRef) clearTimeout(room.timer.timeoutRef);
+      rooms.delete(currentRoomId);
+      return;
     }
+
+    // Re-elect host: next oldest = first entry in insertion-ordered Map
+    if (room.hostSocketId === socket.id) {
+      room.hostSocketId = room.participants.keys().next().value;
+    }
+    broadcastRoomState(currentRoomId);
   });
 });
 
-app.use(express.static(path.join(__dirname, '..', 'client', 'build')));
-app.get('*', (_req, res) => res.sendFile(path.join(__dirname, '..', 'client', 'build', 'index.html')));
-
-const PORT = process.env.PORT || 4000;
-httpServer.listen(PORT, () => console.log(`Planning Poker server listening on :${PORT}`));
+const PORT = process.env.PORT || 3001;
+server.listen(PORT, () => {
+  console.log(`Planning Poker server listening on port ${PORT}`);
+});
