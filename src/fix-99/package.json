@@ -1,10 +1,9 @@
 {
   "name": "fix-99",
   "version": "1.0.0",
-  "description": "Scaffold module for issue #99 - Test fix 1",
+  "description": "Test fix 1 - Issue #99",
   "main": "index.js",
   "scripts": {
-    "test": "jest src/fix-99/"
-  },
-  "keywords": ["planning-poker", "fix-99"]
+    "test": "jest"
+  }
 }
