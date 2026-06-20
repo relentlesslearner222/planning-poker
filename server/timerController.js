@@ -1,127 +1,144 @@
 /**
  * timerController.js
- * Server-side timer logic for Planning Poker.
- * All timer state is driven by the server to prevent client drift.
+ *
+ * Encapsulates the per-room countdown timer lifecycle.
+ * All timer state lives on the server; clients receive authoritative ticks.
+ *
+ * AC3 — setInterval emits timer:tick every second
+ * AC4 — emits timer:expired / votes:roveal on zero or all-voted
+ * AC6 — status is always one of idle | running | paused | expired
  */
+
+'use strict';
+
+const DEFAULT_DURATION = 60; // seconds
 
 /**
- * Start (or restart) the countdown for a room.
- * Assumes room.timer.remainingMs is already set to the desired duration.
- *
- * @param {import('socket.io').Server} io
- * @param {string} roomId
- * @param {object} room  - live room object from roomState
+ * Build a fresh timer sub-object for a new room.
+ * @returns {Object} timer state
  */
-function startTimer(io, roomId, room) {
-  if (room.timer.state === 'running') {
-    // Already running - ignore duplicate start requests
-    return;
-  }
+function createTimer() {
+  return {
+    duration: DEFAULT_DURATION,
+    remaining: DEFAULT_DURATION,
+    status: 'idle',       // idle | running | paused | expired
+    intervalRef: null,
+  };
+}
 
-  room.timer.state = 'running';
-  room.timer.startedAt = Date.now();
+/**
+ * Configure the timer duration (host only, while idle or paused).
+ *
+ * @param {Object} room        - room object from roomManager
+ * @param {number} duration    - desired duration in seconds (10--300)
+ */
+function configure(room, duration) {
+  const d = Math.max(10, Math.min(300, Number(duration)));
+  if (isNaN(d)) return;
+  if (room.timer.status === 'running') return;
+  room.timer.duration = d;
+  room.timer.remaining = d;
+}
+
+/**
+ * Start (or resume) the countdown for a room.
+ *
+ * @param {Object}   room      - room object from roomManager
+ * @param {Function} emitTick  - (payload) => void  -- broadcasts timer:tick to the room
+ * @param {Function} onExpire  - () => void          -- called when remaining hits 0
+ */
+function start(room, emitTick, onExpire) {
+  if (room.timer.status === 'running' || room.timer.status === 'expired') return;
+  if (room.timer.remaining <= 0) return;
+
+  room.timer.status = 'running';
 
   room.timer.intervalRef = setInterval(() => {
-    const elapsed = Date.now() - room.timer.startedAt;
-    room.timer.remainingMs = Math.max(0, room.timer.remainingMs - elapsed);
-    room.timer.startedAt = Date.now(); // re-anchor for next tick
+    room.timer.remaining -= 1;
 
-    io.to(roomId).emit('timer:tick', {
-      remainingMs: room.timer.remainingMs,
-      state: room.timer.state,
+    emitTick({
+      remaining: room.timer.remaining,
+      total: room.timer.duration,
+      status: room.timer.status,
     });
 
-    if (room.timer.remainingMs <= 0) {
-      expireTimer(io, roomId, room);
+    if (room.timer.remaining <= 0) {
+      _expire(room, onExpire);
     }
   }, 1000);
 }
 
 /**
- * Pause the running timer.
- * Saves remaining time so resume can pick up from here.
+ * Pause the running countdown.
+ *
+ * @param {Object} room
  */
-function pauseTimer(io, roomId, room) {
-  if (room.timer.state !== 'running') return;
-
-  clearInterval(room.timer.intervalRef);
-  room.timer.intervalRef = null;
-
-  const elapsed = Date.now() - room.timer.startedAt;
-  room.timer.remainingMs = Math.max(0, room.timer.remainingMs - elapsed);
-  room.timer.state = 'paused';
-
-  io.to(roomId).emit('timer:paused', { remainingMs: room.timer.remainingMs });
+function pause(room) {
+  if (room.timer.status !== 'running') return;
+  _clearInterval(room);
+  room.timer.status = 'paused';
 }
 
 /**
- * Resume a paused timer from its saved remainingMs.
+ * Reset the timer back to the configured duration.
+ *
+ * @param {Object} room
  */
-function resumeTimer(io, roomId, room) {
-  if (room.timer.state !== 'paused') return;
-  startTimer(io, roomId, room);
+function reset(room) {
+  _clearInterval(room);
+  room.timer.remaining = room.timer.duration;
+  room.timer.status = 'idle';
 }
 
 /**
- * Reset timer to the configured duration, clear all votes, notify clients.
+ * Called when all participants have voted before the timer expires.
+ * Stops the interval and triggers the expiry callback.
+ *
+ * @param {Object}   room
+ * @param {Function} onExpire
  */
-function resetTimer(io, roomId, room) {
-  clearInterval(room.timer.intervalRef);
-  room.timer.intervalRef = null;
-  room.timer.state = 'idle';
-  room.timer.remainingMs = room.timer.durationMs;
-  room.timer.startedAt = null;
+function earlyReveal(room, onExpire) {
+  if (room.timer.status !== 'running') return;
+  _expire(room, onExpire);
+}
 
-  if (room.votes) {
-    Object.keys(room.votes).forEach((k) => delete room.votes[k]);
+// --- Internal helpers ------------------------------------------------------
+
+function _expire(room, onExpire) {
+  _clearInterval(room);
+  room.timer.remaining = 0;
+  room.timer.status = 'expired';
+  if (typeof onExpire === 'function') onExpire();
+}
+
+function _clearInterval(room) {
+  if (room.timer.intervalRef) {
+    clearInterval(room.timer.intervalRef);
+    room.timer.intervalRef = null;
   }
-  room.votingLocked = false;
-  room.revealed = false;
-
-  io.to(roomId).emit('timer:reset', { durationMs: room.timer.durationMs });
-  io.to(roomId).emit('timer:tick', {
-    remainingMs: room.timer.remainingMs,
-    state: room.timer.state,
-  });
 }
 
 /**
- * Called when remainingMs reaches 0.
- * Locks voting and triggers vote reveal.
+ * Return a serialisable snapshot of the timer (safe to send over the wire).
+ *
+ * @param {Object} room
+ * @returns {{ duration, remaining, status, total }}
  */
-function expireTimer(io, roomId, room) {
-  clearInterval(room.timer.intervalRef);
-  room.timer.intervalRef = null;
-  room.timer.state = 'idle';
-  room.timer.remainingMs = 0;
-
-  room.votingLocked = true;
-  room.revealed = true;
-
-  io.to(roomId).emit('timer:expired');
-  io.to(roomId).emit('votes:rovealed', { votes: room.votes });
-}
-
-/**
- * Stop the timer early because all participants have voted.
- */
-function stopTimerAllVoted(io, roomId, room) {
-  clearInterval(room.timer.intervalRef);
-  room.timer.intervalRef = null;
-  room.timer.state = 'idle';
-
-  room.votingLocked = true;
-  room.revealed = true;
-
-  io.to(roomId).emit('timer:stopped', { reason: 'all_voted' });
-  io.to(roomId).emit('votes:revealed', { votes: room.votes });
+function getState(room) {
+  return {
+    duration: room.timer.duration,
+    remaining: room.timer.remaining,
+    total: room.timer.duration,
+    status: room.timer.status,
+  };
 }
 
 module.exports = {
-  startTimer,
-  pauseTimer,
-  resumeTimer,
-  resetTimer,
-  expireTimer,
-  stopTimerAllVoted,
+  createTimer,
+  configure,
+  start,
+  pause,
+  reset,
+  earlyReveal,
+  getState,
 };
