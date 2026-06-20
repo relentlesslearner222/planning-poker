@@ -1,0 +1,193 @@
+/* ========================================================================
+   Planning Poker — Timer-Based Edition
+   style.css
+   ======================================================================== */
+
+/* ---------- Reset & Base ---------- */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --clr-bg:        #0f172a;
+  --clr-surface:   #1e293b;
+  --clr-border:    #334155;
+  --clr-primary:   #6366f1;
+  --clr-primary-h: #828cf8;
+  --clr-accent:    #10b981;
+  --clr-danger:    #ef4444;
+  --clr-warn:      #f59e0b;
+  --clr-text:      #f1f5f9;
+  --clr-muted:     #94a3b8;
+  --radius:        12px;
+  --shadow:        0 4px 24px rgba(0,0,0,.45);
+  --timer-stroke:  327px;
+}
+
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: var(--clr-bg);
+  color: var(--clr-text);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- Header ---------- */
+.app-header { text-align: center; padding: 2rem 1rem 1rem; }
+.app-header h1 { font-size: 2.2rem; font-weight: 800; letter-spacing: -.5px; }
+.subtitle { color: var(--clr-muted); margin-top: .25rem; font-size: .95rem; }
+
+/* ---------- Layout ---------- */
+.container {
+  flex: 1;
+  width: 100%;
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 3rem;
+}
+
+.panel { width: 100%; }
+.hidden { display: none !important; }
+
+/* ---------- Card Surface ---------- */
+.card {
+  background: var(--clr-surface);
+  border: 1px solid var(--clr-border);
+  border-radius: var(--radius);
+  padding: 1.75rem;
+  box-shadow: var(--shadow);
+}
+
+/* ---------- Setup Panel ---------- */
+#setup-panel h2 {
+  font-size: 1.4rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--clr-border);
+  padding-bottom: .75rem;
+}
+
+.form-group { display: flex; flex-direction: column; gap: .4rem; margin-bottom: 1.1rem; }
+.form-group label { font-size: .85rem; color: var(--clr-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+.form-group input,
+.form-group select {
+  background: var(--clr-bg);
+  border: 1px solid var(--clr-border);
+  border-radius: 8px;
+  color: var(--clr-text);
+  padding: .65rem .9rem;
+  font-size: 1rem;
+  transition: border-color .2s;
+}
+.form-group input:focus,
+.form-group select:focus { outline: none; border-color: var(--clr-primary); }
+
+/* ---------- Buttons ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .4rem;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: .95rem;
+  font-weight: 600;
+  padding: .6rem 1.25rem;
+  transition: filter .15s, transform .1s;
+}
+.btn:hover { filter: brightness(1.15); }
+.btn:active { transform: scale(.97); }
+.btn-primary  { background: var(--clr-primary); color: #fff; }
+.btn-secondary{ background: var(--clr-border);  color: var(--clr-text); }
+.btn-accent   { background: var(--clr-accent);  color: #fff; }
+.btn-outline  { background: transparent; border: 1px solid var(--clr-border); color: var(--clr-muted); }
+.btn-lg { width: 100%; padding: .85rem; font-size: 1.05rem; margin-top: .5rem; }
+.btn-sm { padding: .35rem .75rem; font-size: .8rem; }
+
+/* ---------- Story Bar ---------- */
+.story-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+}
+.story-title { font-weight: 700; font-size: 1.05rem; }
+
+/* ---------- Timer ---------- */
+.timer-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+  margin-bottom: 2rem;
+}
+.timer-ring { position: relative; width: 160px; height: 160px; }
+.ring-svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.ring-bg { fill: none; stroke: var(--clr-border); stroke-width: 8; }
+.ring-progress {
+  fill: none;
+  stroke: var(--clr-accent);
+  stroke-width: 8;
+  stroke-linecap: round;
+  stroke-dasharray: var(--timer-stroke);
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset .95s linear, stroke .3s;
+}
+.ring-progress.warn   { stroke: var(--clr-warn); }
+.ring-progress.danger { stroke: var(--clr-danger); }
+.timer-inner { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.timer-digits { font-size: 2.6rem; font-weight: 800; line-height: 1; }
+.timer-label  { font-size: .75rem; color: var(--clr-muted); }
+.timer-controls { display: flex; gap: .75rem; }
+
+/* ---------- Participants ---------- */
+.participants-section { margin-bottom: 1.5rem; }
+.participants-section h3, .cards-section h3 {
+  font-size: .85rem; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--clr-muted); margin-bottom: .75rem;
+}
+.participant-list { display: flex; flex-wrap: wrap; gap: .6rem; }
+.participant-chip { display: flex; align-items: center; gap: .5rem; background: var(--clr-bg); border: 1px solid var(--clr-border); border-radius: 999px; padding: .35rem .85rem; font-size: .88rem; transition: border-color .2s; }
+.participant-chip.voted { border-color: var(--clr-accent); }
+.chip-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--clr-border); transition: background .2s; }
+.participant-chip.voted .chip-dot { background: var(--clr-accent); }
+
+/* ---------- Card Deck ---------- */
+.card-deck { display: flex; flex-wrap: wrap; gap: .65rem; }
+.poker-card {
+  width: 64px; height: 88px; background: var(--clr-bg);
+  border: 2px solid var(--clr-border); border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.3rem; font-weight: 700; cursor: pointer;
+  transition: border-color .15s, transform .15s, background .15s;
+  user-select: none;
+}
+.poker-card:hover { border-color: var(--clr-primary-h); transform: translateY(-4px); }
+.poker-card.selected { border-color: var(--clr-primary); background: rgba(99,102,241,.18); transform: translateY(-6px); box-shadow: 0 6px 20px rgba(99,102,241,.4); }
+
+/* ---------- Results ---------- */
+.results-card { text-align: center; }
+.results-card h2 { font-size: 1.6rem; margin-bottom: .4rem; }
+.results-story { color: var(--clr-muted); margin-bottom: 1.5rem; }
+.votes-grid { display: flex; flex-wrap: wrap; gap: .75rem; justify-content: center; margin-bottom: 1.5rem; }
+.vote-chip { display: flex; flex-direction: column; align-items: center; gap: .2rem; background: var(--clr-bg); border: 1px solid var(--clr-border); border-radius: 10px; padding: .65rem 1rem; min-width: 70px; }
+.vote-chip .vc-name { font-size: .75rem; color: var(--clr-muted); }
+.vote-chip .vc-val  { font-size: 1.4rem; font-weight: 800; }
+.stats-row { display: flex; justify-content: center; gap: 1.5rem; margin-bottom: 1.75rem; flex-wrap: wrap; }
+.stat-box { display: flex; flex-direction: column; align-items: center; gap: .2rem; }
+.stat-label { font-size: .75rem; color: var(--clr-muted); text-transform: uppercase; }
+.stat-value { font-size: 1.6rem; font-weight: 800; color: var(--clr-accent); }
+.results-actions { display: flex; gap: .75rem; justify-content: center; flex-wrap: wrap; }
+
+/* ---------- Summary ---------- */
+.summary-table { width: 100%; border-collapse: collapse; margin: 1rem 0 1.5rem; font-size: .9rem; }
+.summary-table th, .summary-table td { text-align: left; padding: .6rem .75rem; border-bottom: 1px solid var(--clr-border); }
+.summary-table th { color: var(--clr-muted); font-size: .78rem; text-transform: uppercase; }
+
+/* ---------- Footer ---------- */
+.app-footer { text-align: center; padding: 1rem; font-size: .8rem; color: var(--clr-muted); border-top: 1px solid var(--clr-border); }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 520px) {
+  .poker-card { width: 54px; height: 76px; font-size: 1.1rem; }
+  .timer-digits { font-size: 2rem; }
+}
