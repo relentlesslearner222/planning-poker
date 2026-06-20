@@ -1,0 +1,37 @@
+/* TimerPoker.css - Scoped styles for Timer Poker UI (issue #7) */
+
+.tp-wrapper {
+  display: flex; flex-direction: column; align-items: center; gap: 1.5rem;
+  padding: 2rem 1rem; font-family: 'Segoe UI', Roboto, Arial, sans-serif;
+  color: #1e1e2e; max-width: 720px; margin: 0 auto;
+}
+.tp-title { font-size: 2rem; font-weight: 800; margin: 0; color: #5a3ef8; }
+.tp-subtitle { margin: 0.25rem 0 0; color: #6b7280; font-size: 0.95rem; }
+.tp-clock { position: relative; width: 160px; height: 160px; display: flex; align-items: center; justify-content: center; }
+.tp-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.tp-track { fill: none; stroke: #e5e7eb; stroke-width: 10; }
+.tp-progress { fill: none; stroke: #5a3ef8; stroke-width: 10; stroke-linecap: round; transition: stroke-dashoffset 0.9s linear, stroke 0.3s; }
+.tp-clock--urgent .tp-progress { stroke: #ef4444; animation: pulse 0.8s ease-in-out infinite alternate; }
+@keyframes pulse { from { opacity: 1; } to { opacity: 0.4; } }
+.tp-time-label { position: relative; font-size: 1.6rem; font-weight: 700; color: #1e1e2e; z-index: 1; letter-spacing: 0.04em; }
+.tp-clock--urgent .tp-time-label { color: #ef4444; }
+.tp-clock--expired .tp-time-label { font-size: 1rem; color: #6b7280; }
+.tp-controls { display: flex; gap: 0.75rem; flex-wrap: wrap; justify-content: center; }
+.tp-btn { padding: 0.55rem 1.25rem; border: none; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: transform 0.1s, opacity 0.2s; }
+.tp-btn:active { transform: scale(0.96); }
+.tp-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.tp-btn--start { background: #5a3ef8; color: #fff; }
+.tp-btn--pause { background: #f59e0b; color: #fff; }
+.tp-btn--reset { background: #e5e7eb; color: #374151; }
+.tp-btn--reveal { background: #10b981; color: #fff; }
+.tp-cards { display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: center; width: 100%; }
+.tp-card { width: 72px; height: 100px; border-radius: 12px; border: 2px solid #d1d5db; background: #fff; font-size: 1.4rem; font-weight: 700; cursor: pointer; transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s; box-shadow: 0 2px 6px rgba(0,0,0,0.07); display: flex; align-items: center; justify-content: center; }
+.tp-card:hover:not(.tp-card--selected) { transform: translateY(-6px); border-color: #5a3ef8; box-shadow: 0 6px18px rgba(90,62,248,0.22); }
+.tp-card--selected { background: #5a3ef8; color: #fff; border-color: #5a3ef8; transform: translateY(-8px); box-shadow: 0 8px 22px rgba(90,62,248,0.35); }
+.tp-results { width: 100%; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 14px; padding: 1.5rem; text-align: center; }
+.tp-results__title { font-size: 1.4rem; font-weight: 700; margin: 0 0 1rem; color: #5a3ef8; }
+.tp-results__list { list-style: none; padding: 0; margin: 0 0 1.25rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.tp-results__item { display: flex; justify-content: space-between; align-items: center; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 0.5rem 1rem; }
+.tp-results__participant { font-weight: 600; }
+.tp-results__card { background: #5a3ef8; color: #fff; border-radius: 6px; padding: 0.2rem 0.65rem; font-weight: 700; }
+@media (max-width: 480px) { .tp-card { width: 60px; height: 84px; font-size: 1.2rem; } .tp-title { font-size: 1.5rem; } }
