@@ -1,88 +1,131 @@
 /**
  * timer.js
- * Core countdown timer for timer-based Planning Poker (Issue #7)
+ * --------
+ * Core timer module for the Planning Poker application.
+ * Provides a configurable countdown timer that drives each voting round.
  *
  * Usage:
- *   const t = createTimer({ duration: 60, onTick, onExpire });
- *   t.start();
- *   t.pause();
- *   t.reset();
+ *   const timer = new PlanningPokerTimer({ duration: 60, onExpire: revealCards });
+ *   timer.start();
  */
 
-/**
- * Creates a countdown timer.
- *
- * @param {object}   options
- * @param {number}   options.duration  - Total seconds to count down from.
- * @param {function} [options.onTick]  - Called every second with remaining seconds.
- * @param {function} [options.onExpire]- Called when the timer reaches zero.
- * @returns {{ start, pause, reset, getRemaining }}
- */
-export function createTimer({ duration, onTick, onExpire }) {
-  if (!Number.isFinite(duration) || duration <= 0) {
-    throw new Error('duration must be a positive finite number');
+export const TimerState = Object.freeze({
+  IDLE: 'idle',
+  RUNNING: 'running',
+  PAUSED: 'paused',
+  EXPIRED: 'expired',
+});
+
+export class PlanningPokerTimer {
+  /**
+   * @param {object}   options
+   * @param {number}   options.duration   - Countdown duration in seconds (default: 60)
+   * @param {function} options.onTick     - Called every second with remaining seconds
+   * @param {function} options.onExpire   - Called when the timer reaches zero
+   * @param {function} options.onStateChange - Called whenever the timer state changes
+   */
+  constructor({ duration = 60, onTick = () => null, onExpire = () => null, onStateChange = () => null } = {}) {
+    if (!Number.isFinite(duration) || duration <= 0) {
+      throw new RangeError('duration must be a positive finite number');
+    }
+
+    this._initialDuration = duration;
+    this._remaining = duration;
+    this._state = TimerState.IDLE;
+    this._intervalId = null;
+
+    // Callbacks
+    this._onTick = onTick;
+    this._onExpire = onExpire;
+    this._onStateChange = onStateChange;
   }
 
-  let remaining = duration;
-  let intervalId = null;
-  let running = false;
+  // --------------------------------------------------------------------------
+  // Public API
+  // --------------------------------------------------------------------------
 
-  function tick() {
-    if (remaining <= 0) {
-      clearInterval(intervalId);
-      intervalId = null;
-      running = false;
-      if (typeof onExpire === 'function') onExpire();
+  /** Start the timer from the initial duration. */
+  start() {
+    if (this._state === TimerState.RUNNING) return;
+    this._remaining = this._initialDuration;
+    this._setState(TimerState.RUNNING);
+    this._tick(); // fire immediately so UI shows correct value
+    this._intervalId = setInterval(() => this._tick(), 1000);
+  }
+
+  /** Pause a running timer. */
+  pause() {
+    if (this._state !== TimerState.RUNNING) return;
+    clearInterval(this._intervalId);
+    this._intervalId = null;
+    this._setState(TimerState.PAUSED);
+  }
+
+  /** Resume a paused timer. */
+  resume() {
+    if (this._state !== TimerState.PAUSED) return;
+    this._setState(TimerState.RUNNING);
+    this._intervalId = setInterval(() => this._tick(), 1000);
+  }
+
+  /** Reset the timer to its initial duration without starting it. */
+  reset() {
+    clearInterval(this._intervalId);
+    this._intervalId = null;
+    this._remaining = this._initialDuration;
+    this._setState(TimerState.IDLE);
+  }
+
+  /** Change the duration (only allowed when IDLE). */
+  setDuration(seconds) {
+    if (this._state !== TimerState.IDLE) {
+      throw new Error('Duration can only be changed while the timer is idle. Call reset() first.');
+    }
+    if (!Number.isFinite(seconds) || seconds <= 0) {
+      throw new RangeError('duration must be a positive finite number');
+    }
+    this._initialDuration = seconds;
+    this._remaining = seconds;
+  }
+
+  /** Current state string (see TimerState). */
+  get state() {
+    return this._state;
+  }
+
+  /** Seconds remaining in the current countdown. */
+  get remaining() {
+    return this._remaining;
+  }
+
+  /** Progress fraction [0, 1] - 1 = full time remaining, 0 = expired. */
+  get progress() {
+    return this._remaining / this._initialDuration;
+  }
+
+  // --------------------------------------------------------------------------
+  // Private helpers
+  // --------------------------------------------------------------------------
+
+  _tick() {
+    this._onTick(this._remaining);
+
+    if (this._remaining <= 0) {
+      clearInterval(this._intervalId);
+      this._intervalId = null;
+      this._setState(TimerState.EXPIRED);
+      this._onExpire();
       return;
     }
-    remaining -= 1;
-    if (typeof onTick === 'function') onTick(remaining);
-    if (remaining === 0) {
-      clearInterval(intervalId);
-      intervalId = null;
-      running = false;
-      if (typeof onExpire === 'function') onExpire();
+
+    this._remaining -= 1;
+  }
+
+  _setState(newState) {
+    const prev = this._state;
+    this._state = newState;
+    if (prev !== newState) {
+      this._onStateChange({ from: prev, to: newState });
     }
   }
-
-  function start() {
-    if (running) return;
-    if (remaining <= 0) return;
-    running = true;
-    intervalId = setInterval(tick, 1000);
-  }
-
-  function pause() {
-    if (!running) return;
-    clearInterval(intervalId);
-    intervalId = null;
-    running = false;
-  }
-
-  function reset(newDuration) {
-    pause();
-    remaining = newDuration !== undefined ? newDuration : duration;
-    if (typeof onTick === 'function') onTick(remaining);
-  }
-
-  function getRemaining() {
-    return remaining;
-  }
-
-  function isRunning() {
-    return running;
-  }
-
-  return { start, pause, reset, getRemaining, isRunning };
-}
-
-/**
- * Formats seconds into MM:SS string.
- * @param {number} seconds
- * @returns {string}
- */
-export function formatTime(seconds) {
-  const m = Math.floor(Math.max(0, seconds) / 60);
-  const s = Math.max(0, seconds) % 60;
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
