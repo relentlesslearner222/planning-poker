@@ -1,0 +1,105 @@
+/* src/styles/timer.css ------------------------------------------------
+   Timer widget styles for timer-based planning poker (issue #7)
+------------------------------------------------------------------- */
+
+.timer-widget {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 20px;
+  border-radius: 12px;
+  background: #f8f9fa;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+  width: fit-content;
+}
+
+.timer-ring {
+  position: relative;
+  width: 120px;
+  height: 120px;
+}
+
+.timer-ring svg {
+  transform: rotate(-90deg);
+}
+
+.timer-ring-track {
+  fill: none;
+  stroke: #e9ecef;
+  stroke-width: 8;
+}
+
+.timer-ring-progress {
+  fill: none;
+  stroke-width: 8;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.9s linear, stroke 0.3s ease;
+}
+
+.timer-widget.normal  .timer-ring-progress { stroke: #28a745; }
+.timer-widget.warning .timer-ring-progress { stroke: #fc851a; }
+.timer-widget.critical .timer-ring-progress { stroke: #dc3545; }
+
+.timer-label {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 1.8rem;
+  font-weight: 700;
+  font-family: 'Courier New', monospace;
+  color: #212529;
+}
+
+.timer-widget.critical .timer-label {
+  color: #dc3545;
+  animation: pulse 0.8s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0, 100% { opacity: 1; }
+  50%     { opacity: 0.4; }
+}
+
+.timer-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.timer-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.timer-btn.start  { background: #28a745; color: #fff; }
+.timer-btn.start:hover  { background: #20913a; }
+.timer-btn.pause  { background: #fc851a; color: #fff; }
+.timer-btn.pause:hover  { background: #e5760e; }
+.timer-btn.reset  { background: #6c757d; color: #fff; }
+.timer-btn.reset:hover  { background: #5a6268; }
+
+.timer-duration-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+
+.timer-duration-picker label {
+  font-weight: 600;
+  color: #495057;
+}
+
+.timer-duration-picker input {
+  width: 70px;
+  padding: 4px 8px;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
