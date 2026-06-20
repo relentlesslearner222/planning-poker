@@ -17,8 +17,7 @@ export default function TimerControls({ socket, roomId, timerStatus, durationSec
   const isStopped = timerStatus === 'stopped';
 
   // Configure duration on input change (only when not running)
-  // Secondary Bug FIX: emit key updated to `durationSeconds` (previously `was `duration`)
-  // to align with the documented socket event contract in SOCKET_EVENTS.md
+  // FIX: emit key is `durationSeconds` per SOCKET_EVENTS.md contract
   const handleDurationChange = (e) => {
     const val = Number(e.target.value);
     setInputSeconds(val);
@@ -27,10 +26,10 @@ export default function TimerControls({ socket, roomId, timerStatus, durationSec
     }
   };
 
-  const handleStart  = () => socket.emit('timer:start', { roomId });
-  const handlePause  = () => socket.emit('timer:pause', { roomId });
+  const handleStart  = () => socket.emit('timer:start',  { roomId });
+  const handlePause  = () => socket.emit('timer:pause',  { roomId });
   const handleResume = () => socket.emit('timer:resume', { roomId });
-  const handleReset  = () => socket.emit('timer:reset', { roomId });
+  const handleReset  = () => socket.emit('timer:reset',  { roomId });
 
   return (
     <div className="timer-controls">
@@ -48,7 +47,7 @@ export default function TimerControls({ socket, roomId, timerStatus, durationSec
       </label>
 
       <div className="timer-controls__btns">
-        {*/* Start: disabled when running or paused -- AC2 */*}
+        {/* Start: disabled when running or paused -- AC2 */}
         <button
           onClick={handleStart}
           disabled={isRunning || isPaused}
@@ -57,7 +56,7 @@ export default function TimerControls({ socket, roomId, timerStatus, durationSec
           Start
         </button>
 
-        {*/* Pause: visible only when running -- AC8 */*}
+        {/* Pause: visible only when running -- AC8 */}
         <button
           onClick={handlePause}
           disabled={!isRunning}
@@ -66,7 +65,7 @@ export default function TimerControls({ socket, roomId, timerStatus, durationSec
           Pause
         </button>
 
-        {*/* Resume: visible only when paused -- AC8 */*}
+        {/* Resume: visible only when paused -- AC8 */}
         <button
           onClick={handleResume}
           disabled={!isPaused}
@@ -75,7 +74,7 @@ export default function TimerControls({ socket, roomId, timerStatus, durationSec
           Resume
         </button>
 
-        {*/* Reset: always enabled for host -- AC9 */*}
+        {/* Reset: always enabled for host -- AC9 */}
         <button
           onClick={handleReset}
           className="btn btn--reset"
