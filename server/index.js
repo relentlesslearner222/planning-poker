@@ -15,23 +15,25 @@ const io = new Server(server, {
   },
 });
 
-// In-memory room state
+// â”€ In-memory room state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // rooms[roomId] = {
-//   hostId: socketId,
-//   members: Map<socketId, { name }>,
-//   votes: Map<socketId, value>,
-//   revealed: boolean,
-//   timer: {
-//     durationSeconds: number,
+//   hostId        : string,
+//   members       : Map<socketId, { name: string }>,
+//   votes         : Map<socketId, string | null>,
+//   revealed      : boolean,
+//   timer         : {
+//     durationSeconds : number,
 //     remainingSeconds: number,
-//     running: boolean,
-//     paused: boolean,
-//     intervalId: NodeJS timer | null,
-//   }
+//     running         : boolean,
+//     paused          : boolean,
+//     intervalId      : NodeJS.Timeout | null,
+//   },
 // }
 const rooms = {};
 
-function getOrCreateRoom(roomId) {
+// â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+function getRoom(roomId) {
   if (!rooms[roomId]) {
     rooms[roomId] = {
       hostId: null,
@@ -50,28 +52,30 @@ function getOrCreateRoom(roomId) {
   return rooms[roomId];
 }
 
-function getRoomState(room) {
+function getRoomState(roomId) {
+  const room = rooms[roomId];
+  if (!room) return null;
   return {
     hostId: room.hostId,
     members: Array.from(room.members.entries()).map(([id, data]) => ({
-      socketId: id,
+      id,
       name: data.name,
     })),
     votes: room.revealed
       ? Object.fromEntries(room.votes)
       : Object.fromEntries(
-          Array.from(room.votes.keys()).map((k) => [k, '?'])
+          Array.from(room.votes.entries()).map(([id, v]) => [
+            id,
+            v !== null ? 'âœ“': null,
+          ])
         ),
     revealed: room.revealed,
-  };
-}
-
-function getTimerState(room) {
-  return {
-    durationSeconds: room.timer.durationSeconds,
-    remainingSeconds: room.timer.remainingSeconds,
-    running: room.timer.running,
-    paused: room.timer.paused,
+    timer: {
+      durationSeconds: room.timer.durationSeconds,
+      remainingSeconds: room.timer.remainingSeconds,
+      running: room.timer.running,
+      paused: room.timer.paused,
+    },
   };
 }
 
@@ -83,98 +87,115 @@ function stopTimer(room) {
   room.timer.running = false;
 }
 
-// âœ… CORRECT -- `io` is the Socket.io server instance
+function promoteNewHost(roomId) {
+  const room = rooms[roomId];
+  if (!room || room.members.size === 0) return;
+  const nextHostId = room.members.keys().next().value;
+  room.hostId = nextHostId;
+  io.to(roomId).emit('room:updated', getRoomState(roomId));
+}
+
+// â”€ REST health-check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+app.get('/health', (_req, res) => res.json({ ok: true }));
+
+// â”€ Socket.io â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// FIX #1 (Blocker): was `ie.on('connection', ...)` â€” `ie` is undefined;
+// corrected to `io.on('connection', ...)`.
 io.on('connection', (socket) => {
-  console.log(`Socket connected: ${socket.id}`);
+  console.log(`[socket] connected: ${socket.id}`);
 
-  // 84 join-room -------------------------------------------------------
-  socket.on('j-room', ({ roomId, playerName }) => {
-    if (!roomId || !playerName) return;
+  // â”’ join:room â”â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  socket.on('join:room', ({ roomId, name }) => {
+    if (!roomId || !name) return;
+    const room = getRoom(roomId);
 
-    const room = getOrCreateRoom(roomId);
+    socket.join(roomId);
+    room.members.set(socket.id, { name });
+    room.votes.set(socket.id, null);
 
-    // First member becomes the host
-    if (room.members.size === 0) {
+    // First member becomes host
+    if (!room.hostId) {
       room.hostId = socket.id;
     }
 
-    room.members.set(socket.id, { name: playerName });
-    socket.join(roomId);
-    socket.data.roomId = roomId;
+    // Send full timer state to the joining client
+    socket.emit('timer:updated', {
+      durationSeconds: room.timer.durationSeconds,
+      remainingSeconds: room.timer.remainingSeconds,
+      running: room.timer.running,
+      paused: room.timer.paused,
+    });
 
-    // Send full state to the joining client
-    socket.emit('room-state', getRoomState(room));
-    socket.emit('timer:updated', getTimerState(room));
-
-    // Notify others
-    io.to(roomId).emit('room-state', getRoomState(room));
-    console.log(`${playerName} joined room ${roomId}`);
+    io.to(roomId).emit('room:updated', getRoomState(roomId));
+    console.log(`[room] ${name} (${socket.id}) joined ${roomId}`);
   });
 
-  socket.on('join-room', ({ roomId, playerName }) => {
-    if (!roomId || !playerName) return;
-
-    const room = getOrCreateRoom(roomId);
-
-    // First member becomes the host
-    if (room.members.size === 0) {
-      room.hostId = socket.id;
-    }
-
-    room.members.set(socket.id, { name: playerName });
-    socket.join(roomId);
-    socket.data.roomId = roomId;
-
-    socket.emit('room-state', getRoomState(room));
-    socket.emit('timer:updated', getTimerState(room));
-
-    io.to(roomId).emit('room-state', getRoomState(room));
-    console.log(`${playerName} joined room ${roomId}`);
-  });
-
-  // â”€â”€ vote ---------------------------------------------------------
-  socket.on('submit-vote', ({ roomId, vote }) => {
+  // â”’ vote:cast â”â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  socket.on('vote:cast', ({ roomId, vote }) => {
     const room = rooms[roomId];
-    if (!room) return;
+    if (!room || !room.members.has(socket.id)) return;
+    if (room.revealed) return; // votes locked after reveal
 
     room.votes.set(socket.id, vote);
-    io.to(roomId).emit('room-state', getRoomState(room));
+    io.to(roomId).emit('room:updated', getRoomState(roomId));
   });
 
-  // â”€â”€ reveal ---------------------------------------------------------
-  socket.on('reveal-votes', ({ roomId }) => {
+  // â”’ vote:reveal â”â”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€
+  socket.on('vote:reveal', ({ roomId }) => {
     const room = rooms[roomId];
     if (!room || socket.id !== room.hostId) return;
 
     room.revealed = true;
-    io.to(roomId).emit('room-state', getRoomState(room));
+    stopTimer(room);
+    io.to(roomId).emit('room:updated', getRoomState(roomId));
   });
 
-  // 84 reset ------------------------------------------------------------
-  socket.on('reset-game', ({ roomId }) => {
+  // â”’ vote:reset â”â”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€
+  socket.on('vote:reset', ({ roomId }) => {
     const room = rooms[roomId];
     if (!room || socket.id !== room.hostId) return;
 
-    room.votes.clear();
+    room.votes.forEach((_v, id) => room.votes.set(id, null));
     room.revealed = false;
-    io.to(roomId).emit('room-state', getRoomState(room));
+
+    // Also reset timer
+    stopTimer(room);
+    room.timer.remainingSeconds = room.timer.durationSeconds;
+    room.timer.paused = false;
+
+    io.to(roomId).emit('timer:updated', {
+      durationSeconds: room.timer.durationSeconds,
+      remainingSeconds: room.timer.remainingSeconds,
+      running: false,
+      paused: false,
+    });
+    io.to(roomId).emit('room:updated', getRoomState(roomId));
   });
 
-  // â”€â”€ timer:configure -------------------------------------------------
-  // Payload: { roomId, durationSeconds }  (per SOCKET_EVENTS.md)
+  // â”’ timer:configure â”â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // FIX #2 (Contract mismatch): server now reads `durationSeconds` from
+  // the payload, matching the SOCKET_EVENTS.md contract and what
+  // TimerControls.jsx already emits. Previously the server was
+  // reading the wrong key `duration`, causing all configure calls
+  // to silently apply undefined.
   socket.on('timer:configure', ({ roomId, durationSeconds }) => {
     const room = rooms[roomId];
     if (!room || socket.id !== room.hostId) return;
-    if (room.timer.running) return; // ignored while running
+    if (room.timer.running) return; // ignored while running per spec
 
     const clamped = Math.min(600, Math.max(60, Number(durationSeconds)));
     room.timer.durationSeconds = clamped;
     room.timer.remainingSeconds = clamped;
 
-    io.to(roomId).emit('timer:updated', getTimerState(room));
+    io.to(roomId).emit('timer:updated', {
+      durationSeconds: room.timer.durationSeconds,
+      remainingSeconds: room.timer.remainingSeconds,
+      running: room.timer.running,
+      paused: room.timer.paused,
+    });
   });
 
-  // â”€â”€ timer:start -----------------------------------------------------
+  // â”’ timer:start â”â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   socket.on('timer:start', ({ roomId }) => {
     const room = rooms[roomId];
     if (!room || socket.id !== room.hostId) return;
@@ -188,21 +209,26 @@ io.on('connection', (socket) => {
 
       io.to(roomId).emit('timer:tick', {
         remainingSeconds: room.timer.remainingSeconds,
-        running: room.timer.running,
+        running: true,
       });
 
       if (room.timer.remainingSeconds <= 0) {
         stopTimer(room);
         room.revealed = true;
         io.to(roomId).emit('timer:expired');
-        io.to(roomId).emit('room-state', getRoomState(room));
+        io.to(roomId).emit('room:updated', getRoomState(roomId));
       }
     }, 1000);
 
-    io.to(roomId).emit('timer:updated', getTimerState(room));
+    io.to(roomId).emit('timer:updated', {
+      durationSeconds: room.timer.durationSeconds,
+      remainingSeconds: room.timer.remainingSeconds,
+      running: true,
+      paused: false,
+    });
   });
 
-  // â”€â”€ timer:pause -----------------------------------------------------
+  // â”’ timer:pause â”â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   socket.on('timer:pause', ({ roomId }) => {
     const room = rooms[roomId];
     if (!room || socket.id !== room.hostId) return;
@@ -211,10 +237,15 @@ io.on('connection', (socket) => {
     stopTimer(room);
     room.timer.paused = true;
 
-    io.to(roomId).emit('timer:updated', getTimerState(room));
+    io.to(roomId).emit('timer:updated', {
+      durationSeconds: room.timer.durationSeconds,
+      remainingSeconds: room.timer.remainingSeconds,
+      running: false,
+      paused: true,
+    });
   });
 
-  // â”€â”€ timer:resume ----------------------------------------------------
+  // â”’ timer:resume â”â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   socket.on('timer:resume', ({ roomId }) => {
     const room = rooms[roomId];
     if (!room || socket.id !== room.hostId) return;
@@ -228,63 +259,74 @@ io.on('connection', (socket) => {
 
       io.to(roomId).emit('timer:tick', {
         remainingSeconds: room.timer.remainingSeconds,
-        running: room.timer.running,
+        running: true,
       });
 
       if (room.timer.remainingSeconds <= 0) {
         stopTimer(room);
         room.revealed = true;
         io.to(roomId).emit('timer:expired');
-        io.to(roomId).emit('room-state', getRoomState(room));
+        io.to(roomId).emit('room:updated', getRoomState(roomId));
       }
     }, 1000);
 
-    io.to(roomId).emit('timer:updated', getTimerState(room));
+    io.to(roomId).emit('timer:updated', {
+      durationSeconds: room.timer.durationSeconds,
+      remainingSeconds: room.timer.remainingSeconds,
+      running: true,
+      paused: false,
+    });
   });
 
-  // â”€â”€ timer:reset -----------------------------------------------------
+  // â”’ timer:reset â”â”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€"”€
   socket.on('timer:reset', ({ roomId }) => {
     const room = rooms[roomId];
     if (!room || socket.id !== room.hostId) return;
 
     stopTimer(room);
-    room.timer.paused = false;
     room.timer.remainingSeconds = room.timer.durationSeconds;
+    room.timer.paused = false;
 
-    io.to(roomId).emit('timer:updated', getTimerState(room));
+    io.to(roomId).emit('timer:updated', {
+      durationSeconds: room.timer.durationSeconds,
+      remainingSeconds: room.timer.remainingSeconds,
+      running: false,
+      paused: false,
+    });
   });
 
-  // 84 disconnect -------------------------------------------------------
+  // â”’ disconnect â”â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   socket.on('disconnect', () => {
-    const roomId = socket.data.roomId;
-    if (!roomId) return;
+    console.log(`[socket] disconnected: ${socket.id}`);
 
-    const room = rooms[roomId];
-    if (!room) return;
+    for (const [roomId, room] of Object.entries(rooms)) {
+      if (!room.members.has(socket.id)) continue;
 
-    room.members.delete(socket.id);
-    room.votes.delete(socket.id);
+      room.members.delete(socket.id);
+      room.votes.delete(socket.id);
 
-    // Promote next oldest member as host if the host left
-    if (room.hostId === socket.id) {
-      const nextHost = room.members.keys().next().value;
-      room.hostId = nextHost || null;
+      if (room.members.size === 0) {
+        // Empty room â€” clean up timer and remove room
+        stopTimer(room);
+        delete rooms[roomId];
+        continue;
+      }
+
+      // Promote a new host if the host left
+      if (room.hostId === socket.id) {
+        promoteNewHost(roomId);
+      } else {
+        io.to(roomId).emit('room:updated', getRoomState(roomId));
+      }
     }
-
-    if (room.members.size === 0) {
-      stopTimer(room);
-      delete rooms[roomId];
-      return;
-    }
-
-    io.to(roomId).emit('room-state', getRoomState(room));
-    console.log(`Socket ${socket.id} left room ${roomId}`);
   });
 });
+
+// â”€ Start â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
+  console.log(`[server] listening on port ${PORT}`);
 });
 
-module.exports = { app, server };
+module.exports = { app, server, io };
