@@ -1,157 +1,90 @@
 /**
  * roomManager.js
  * Manages in-memory room state for Planning Poker.
- *
- * Room shape:
- * {
- *   id:             string,
- *   members:        Array<{ socketId: string, joinedAt: number }>,  // ordered by join time
- *   hostSocketId:   string | null,
- *   votes:          Record<socketId, value>,
- *   votingLocked:   boolean,
- *   timerDuration:  number,   // seconds configured by host
- *   timerRemaining: number,   // seconds left
- *   timerRunning:   boolean,
- *   timerInterval:  NodeJS.Timeout | null,
- * }
+ * Adds host tracking, timer configuration, and timer state.
  */
 
-const rooms = new Map();
+const rooms = {};
 
-// ┐── Room lifecycle ┐───────────────────────────────────────────────────
-
-/**
- * Returns an existing room or creates a brand-new one.
- */
-function getOrCreateRoom(roomId) {
-  if (!rooms.has(roomId)) {
-    rooms.set(roomId, {
-      id: roomId,
-      members: [],
-      hostSocketId: null,
-      votes: {},
-      votingLocked: false,
-      timerDuration: 60,
-      timerRemaining: 60,
-      timerRunning: false,
-      timerInterval: null,
-    });
-  }
-  return rooms.get(roomId);
+function createRoom(roomId) {
+  return {
+    id: roomId,
+    sockets: [],
+    votes: {},
+    votingLocked: false,
+    hostSocketId: null,
+    timerConfig: { durationMs: 60000 },
+    timerState: {
+      running: false,
+      startedAt: null,
+      durationMs: 60000,
+      remainingAtPause: null,
+      pausedAt: null,
+      intervalId: null,
+    },
+  };
 }
 
-/**
- * Adds a member to a room.
- * The very first member to join becomes the host.
- * Returns { room, isHost }.
- */
+function getOrCreateRoom(roomId) {
+  if (!rooms[roomId]) rooms[roomId] = createRoom(roomId);
+  return rooms[roomId];
+}
+
+function assignHost(room) {
+  room.hostSocketId = room.sockets.length > 0 ? room.sockets[0] : null;
+}
+
 function joinRoom(roomId, socketId) {
   const room = getOrCreateRoom(roomId);
-  const alreadyIn = room.members.some((m) => m.socketId === socketId);
-  if (!alreadyIn) {
-    room.members.push({ socketId, joinedAt: Date.now() });
-  }
-  if (!room.hostSocketId) {
-    room.hostSocketId = socketId;
-  }
-  const isHost = room.hostSocketId === socketId;
-  return { room, isHost };
+  if (!room.sockets.includes(socketId)) room.sockets.push(socketId);
+  assignHost(room);
+  return room;
 }
 
-/**
- * Removes a member from a room.
- * If the departing member was the host, reassigns to the next oldest member.
- * Returns { room, newHostSocketId } where newHostSocketId is null if unchanged
- * or the room is now empty.
- */
 function leaveRoom(roomId, socketId) {
-  const room = rooms.get(roomId);
-  if (!room) return { room: null, newHostSocketId: null };
-
-  room.members = room.members.filter((m) => m.socketId !== socketId);
+  const room = rooms[roomId];
+  if (!room) return null;
+  room.sockets = room.sockets.filter((id) => id !== socketId);
   delete room.votes[socketId];
-
-  let newHostSocketId = null;
-
-  if (room.members.length === 0) {
-    clearRoomTimer(room);
-    rooms.delete(roomId);
-    return { room: null, newHostSocketId: null };
+  if (room.sockets.length === 0) {
+    if (room.timerState.intervalId) clearInterval(room.timerState.intervalId);
+    delete rooms[roomId];
+    return null;
   }
-
-  if (room.hostSocketId === socketId) {
-    room.hostSocketId = room.members[0].socketId;
-    newHostSocketId = room.hostSocketId;
-  }
-
-  return { room, newHostSocketId };
+  assignHost(room);
+  return room;
 }
 
-// ┐── Timer helpers ┐─────────────────────────────────────────────────
-
-/**
- * Clears any running interval for the room without mutating other state.
- */
-function clearRoomTimer(room) {
-  if (room.timerInterval) {
-    clearInterval(room.timerInterval);
-    room.timerInterval = null;
-  }
-  room.timerRunning = false;
+function allVoted(room) {
+  if (room.sockets.length === 0) return false;
+  return room.sockets.every((id) => room.votes[id] !== undefined);
 }
 
-/**
- * Fully resets timer state to defaults (or to a new duration).
- */
-function resetTimer(room, duration) {
-  clearRoomTimer(room);
-  const d = duration !== undefined ? duration : room.timerDuration;
-  room.timerDuration = d;
-  room.timerRemaining = d;
-  room.votes = {};
-  room.votingLocked = false;
+function getTimerStatePayload(room) {
+  const { running, startedAt, durationMs, remainingAtPause, pausedAt } = room.timerState;
+  return { running, startedAt, durationMs, remainingAtPause, pausedAt };
 }
 
-// ┐── Vote helpers ┐───────────────────────────────────────────────────
-
-/**
- * Records a vote if voting is not locked.
- * Returns true if the vote was accepted.
- */
-function castVote(roomId, socketId, value) {
-  const room = rooms.get(roomId);
-  if (!room || room.votingLocked) return false;
-  room.votes[socketId] = value;
-  return true;
-}
-
-/**
- * Returns true if every current member has cast a vote.
- */
-function allVotesCast(room) {
-  if (room.members.length === 0) return false;
-  return room.members.every((m) => m.socketId in room.votes);
-}
-
-// ┐── Accessors ┐─────────────────────────────────────────────────────
-
-function getRoom(roomId) {
-  return rooms.get(roomId) || null;
-}
-
-function isHost(roomId, socketId) {
-  const room = rooms.get(roomId);
-  return room ? room.hostSocketId === socketId : false;
+function getRoomStatePayload(room) {
+  return {
+    roomId: room.id,
+    sockets: room.sockets,
+    votes: room.votes,
+    votingLocked: room.votingLocked,
+    hostSocketId: room.hostSocketId,
+    timerConfig: room.timerConfig,
+    timerState: getTimerStatePayload(room),
+  };
 }
 
 module.exports = {
+  rooms,
   getOrCreateRoom,
+  createRoom,
+  assignHost,
   joinRoom,
   leaveRoom,
-  clearRoomTimer,
-  resetTimer,
-  castVote,
-  allVotesCast,
-  getRoom,
-  isHost,
+  allVoted,
+  getTimerStatePayload,
+  getRoomStatePayload,
 };
