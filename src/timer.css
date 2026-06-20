@@ -1,0 +1,163 @@
+/**
+ * timer.css
+ * ----------
+ * Styles for the Planning Poker timer widget.
+ * Features a SVG-based countdown ring and control buttons.
+ */
+
+/* ==============================================
+   Timer Widget Container
+   ============================================== */
+.timer-widget {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* ==============================================
+   SVG Ring
+   ============================================== */
+.timer-ring-wrapper {
+  position: relative;
+  width: 120px;
+  height: 120px;
+}
+
+.timer-ring {
+  transform: rotate(-90deg); /* start from the top */
+  width: 100%;
+  height: 100%;
+}
+
+.timer-ring circle {
+  fill: none;
+  stroke-width: 8;
+  stroke-linecap: round;
+}
+
+/* Background track */
+.timer-ring .ring-track {
+  stroke: #e0e7ff;
+}
+
+/* Animated progress arc */
+.timer-ring .ring-progress {
+  stroke: #6475ff;
+  transition: stroke-dashoffset 0.8s linear;
+}
+
+/* Urgent colour when under 10s */
+.timer-widget.urgent .ring-progress {
+  stroke: #f64d4d;
+}
+
+/* Digital countdown label centred inside the ring */
+.timer-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #37373a;
+}
+
+.timer-widget.urgent .timer-label {
+  color: #f64d4d;
+  animation: pulse 0.6s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%    { opacity: 1; }
+  50%   { opacity: 0.4; }
+  100%  { opacity: 1; }
+}
+
+/* ==============================================
+   Timer Controls
+   ============================================== */
+.timer-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.timer-btn {
+  padding: 6px 16px;
+  border: none;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.timer-btn:active {
+  transform: scale(0.95);
+}
+
+.timer-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.timer-btn--start   { background: #6475ff; color: #fff; }
+
+.timer-btn--pause   { background: #f4a261; color: #fff; }
+
+.timer-btn--resume  { background: #4ade80; color: #1a1a1a; }
+
+.timer-btn--reset   { background: #e4e4e7; color: #3f3f46; }
+
+/* ==============================================
+   Duration Selector
+   ============================================== */
+.timer-duration-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: #52525b;
+}
+
+.timer-duration-picker select {
+  padding: 4px 10px;
+  border: 1px solid #d4d4d8;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+/* ==============================================
+   Expired Banner
+   ============================================== */
+.timer-expired-banner {
+  display: none;
+  padding: 6px 18px;
+  background: #fee2e2;
+  color: #b91c1c;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.timer-expired-banner.visible {
+  display: block;
+}
+
+/* ==============================================
+   Responsive
+   ============================================== */
+@media (max-width: 480px) {
+  .timer-ring-wrapper {
+    width: 90px;
+    height: 90px;
+  }
+
+  .timer-label {
+    font-size: 1.4rem;
+  }
+}
