@@ -1,104 +1,108 @@
 <!DOCTYPE html>
-<!--
-  Timer-Based Planning Poker
-  Issue #7 | relentlesslearner222/planning-poker
--->
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>⚣️ Timer-Based Planning Poker</title>
+  <title>Timer-Based Planning Poker</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-
   <!-- HEADER -->
   <header class="app-header">
-    <h1>🃏 Planning Poker</h1>
-    <p class="subtitle">Vote on story points — timer reveals all!</p>
+    <h1>🃿 Planning Poker</h1>
+    <p class="subtitle">Timer-Based Estimation</p>
   </header>
-
-  <!-- MAIN -->
   <main class="container">
 
-    <!-- Setup Panel -->
-    <section class="panel setup-panel" id="setupPanel">
+    <!-- SETUP PANEL -->
+    <section id="setup-panel" class="panel card">
       <h2>Session Setup</h2>
-
       <div class="form-group">
-        <label for="storyInput">💋 Story / Task Description</label>
-        <input type="text" id="storyInput" placeholder="e.g. Implement user authentication" />
+        <label for="story-title">Story / Ticket Title</label>
+        <input id="story-title" type="text" placeholder="e.g. US-42: Add user login" />
       </div>
-
       <div class="form-group">
-        <label for="participantInput">👤 Add Participant</label>
-        <div class="inline-group">
-          <input type="text" id="participantInput" placeholder="Participant name" />
-          <button id="addParticipantBtn" class="btn btn-secondary">Add</button>
-        </div>
+        <label for="participant-names">Participants (comma-separated)</label>
+        <input id="participant-names" type="text" placeholder="Alice, Bob, Carol" />
       </div>
-
-      <ul class="participant-list" id="participantList"></ul>
-
       <div class="form-group">
-        <label for="timerDuration">♪ﻏ Timer Duration (seconds)</label>
-        <input type="number" id="timerDuration" value="60" min="10" max="300" />
+        <label for="timer-duration">Timer Duration (seconds)</label>
+        <input id="timer-duration" type="number" min="10" max="300" value="60" />
       </div>
-
-      <button id="startSessionBtn" class="btn btn-primary">▸️ Start Session</button>
+      <div class="form-group">
+        <label for="card-scale">Card Scale</label>
+        <select id="card-scale">
+          <option value="fibonacci">Fibonacci (1,2,3,5,8,13,21,?)</option>
+          <option value="tshirt">T-Shirt (XS,S,M,L,XL,?)</option>
+          <option value="powers">Powers of 2 (1,2,4,8,16,32,?)</option>
+        </select>
+      </div>
+      <button id="start-btn" class="btn btn-primary btn-lg">Start Session ▶</button>
     </section>
 
-    <!-- Voting Panel -->
-    <section class="panel voting-panel hidden" id="votingPanel">
-      <div class="story-title" id="storyTitle"></div>
-
+    <!-- GAME PANEL -->
+    <section id="game-panel" class="panel hidden">
+      <div class="story-bar card">
+        <span id="story-label" class="story-title"></span>
+        <button id="reset-btn" class="btn btn-outline btn-sm">ⅺ Reset</button>
+      </div>
       <div class="timer-section">
-        <div class="timer-ring">
-          <svg class="timer-svg" viewBox="0 0 120 120">
-            <circle class="timer-bg" cx="60" cy="60" r="54" />
-            <circle class="timer-progress" id="timerCircle" cx="60" cy="60" r="54" />
+        <div id="timer-ring" class="timer-ring">
+          <svg viewBox="0 0 120 120" class="ring-svg">
+            <circle class="ring-bg" cx="60" cy="60" r="52"/>
+            <circle id="ring-progress" class="ring-progress" cx="60" cy="60" r="52"/>
           </svg>
-          <div class="timer-text" id="timerDisplay">60</div>
+          <div class="timer-inner">
+            <span id="timer-display" class="timer-digits">60</span>
+            <span class="timer-label">sec</span>
+          </div>
         </div>
         <div class="timer-controls">
-          <button id="pauseResumeBtn" class="btn btn-secondary">ⅶ️ Pause</button>
-          <button id="resetTimerBtn"  class="btn btn-secondary">👄 Reset</button>
-          <button id="revealNowBtn"   class="btn btn-danger">👋 Reveal Now</button>
+          <button id="pause-btn" class="btn btn-secondary">⋸ Pause</button>
+          <button id="reveal-btn" class="btn btn-accent">👋 Reveal</button>
         </div>
       </div>
-
-      <div class="cards-section">
-        <h3 id="votingLabel">Cast your vote</h3>
-        <p class="voter-select-hint">Select your name, then pick a card.</p>
-        <div class="voter-selector" id="voterSelector"></div>
-        <div class="card-deck" id="cardDeck"></div>
-      </div>
-
-      <div class="vote-status-section">
+      <div class="participants-section">
         <h3>Participants</h3>
-        <ul class="vote-status-list" id="voteStatusList"></ul>
+        <div id="participant-list" class="participant-list"></div>
+      </div>
+      <div class="cards-section">
+        <h3>Your Vote</h3>
+        <div id="card-deck" class="card-deck"></div>
       </div>
     </section>
 
-    <!-- Results Panel -->
-    <section class="panel results-panel hidden" id="resultsPanel">
-      <h2>📋 Results</h2>
-      <div class="story-title" id="resultStoryTitle"></div>
-      <ul class="results-list" id="resultsList"></ul>
-      <div class="stats" id="statsBox"></div>
-      <div class="results-actions">
-        <button id="newRoundBtn"   class="btn btn-primary">🔁 New Round (same story)</button>
-        <button id="newStoryBtn"   class="btn btn-secondary">💋 New Story</button>
-        <button id="resetAllBtn"   class="btn btn-danger">🗐 Reset All</button>
+    <!-- RESULTS PANEL -->
+    <section id="results-panel" class="panel hidden">
+      <div class="results-card card">
+        <h2>📋 Results</h2>
+        <p class="results-story" id="results-story-label"></p>
+        <div id="votes-grid" class="votes-grid"></div>
+        <div class="stats-row">
+          <div class="stat-box"><span class="stat-label">Average</span><span id="stat-avg" class="stat-value">—</span></div>
+          <div class="stat-box"><span class="stat-label">Median</span><span id="stat-median" class="stat-value">—</span></div>
+          <div class="stat-box"><span class="stat-label">Consensus</span><span id="stat-consensus" class="stat-value">—</span></div>
+        </div>
+        <div class="results-actions">
+          <button id="next-round-btn" class="btn btn-primary">Next Story ▶</button>
+          <button id="end-session-btn" class="btn btn-outline">End Session</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- SESSION SUMMARY -->
+    <section id="summary-panel" class="panel hidden">
+      <div class="card">
+        <h2>🏁 Session Summary</h2>
+        <div id="summary-table-wrapper"></div>
+        <button id="new-session-btn" class="btn btn-primary btn-lg">New Session</button>
       </div>
     </section>
 
   </main>
-
   <footer class="app-footer">
-    <p>Timer-Based Planning Poker &mdash; Issue #7</p>
+    <p>Planning Poker &copy; 2025 — Timer-Based Edition</p>
   </footer>
-
   <script src="app.js"></script>
 </body>
 </html>
