@@ -1,49 +1,41 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 
 /**
- * useTimer -- subscribes to server-driven timer events.
+ * useTimer -- custom hook that returns the remaining milliseconds for a
+ * server-supplied timer.
  *
- * @param {import('socket.io-client').Socket} socket  Active Socket.io socket instance.
- * @param {Function} [onTimerExpired]  Optional callback fired when the
- *                                      server emits `timer:expired`.
- * @returns {{durationSeconds: number, remainingSeconds: number, running: boolean, paused: boolean}}
+ * @param {number | null} startTime  - epoch ms when the timer was started
+ * @param {number | null} durationMs - total duration in ms
+ * @returns {number} remainingMs     - ms remaining (>= 0)
+ *
+ * Design notes:
+ *  - Computes remainingMs = durationMs - (Date.now() - startTime) on every
+ *    tick so the value is always anchored to the server-recorded startTime
+ *    rather than accumulating client-side drift. (AC4)
+ *  - Ticks every 100 ms for smooth MM:SS updates without excessive rerenders.
  */
-export function useTimer(socket, onTimerExpired) {
-  const [timerState, setTimerState] = useState({
-    durationSeconds: 300,   // default 5 minutes
-    remainingSeconds: 300,
-    running: false,
-    paused: false,
+export function useTimer(startTime, durationMs) {
+  const [remainingMs, setRemaining] = useState(() => {
+    if (startTime == null || durationMs == null) return null;
+    return Math.max(0, durationMs - (Date.now() - startTime));
   });
 
-  const handleTick = useCallback(({ remainingSeconds, running }) => {
-    setTimerState((prev) => ({ ...prev, remainingSeconds, running }));
-  }, []);
-
-  const handleUpdated = useCallback((state) => {
-    setTimerState(state);
-  }, []);
-
-  const handleExpired = useCallback(() => {
-    setTimerState((prev) => ({ ...prev, remainingSeconds: 0, running: false, paused: false }));
-    if (typeof onTimerExpired === 'function') {
-      onTimerExpired();
-    }
-  }, [onTimerExpired]);
-
   useEffect(() => {
-    if (!socket) return;
+    if (startTime == null || durationMs == null) {
+      setRemaining(null);
+      return;
+    }
 
-    socket.on('timer:tick', handleTick);
-    socket.on('timer:updated', handleUpdated);
-    socket.on('timer:expired', handleExpired);
+    // Immediately sync on mount / prop change
+    setRemaining(Math.max(0, durationMs - (Date.now() - startTime)));
 
-    return () => {
-      socket.off('timer:tick', handleTick);
-      socket.off('timer:updated', handleUpdated);
-      socket.off('timer:expired', handleExpired);
-    };
-  }, [socket, handleTick, handleUpdated, handleExpired]);
+    const id = setInterval(() => {
+      const next = Math.max(0, durationMs - (Date.now() - startTime));
+      setRemaining(next);
+    }, 100);
 
-  return timerState;
+    return () => clearInterval(id);
+  }, [startTime, durationMs]);
+
+  return remainingMs;
 }
