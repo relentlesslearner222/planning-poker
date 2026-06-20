@@ -1,82 +1,67 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 /**
- * useTimer - custom hook for server-synchronized timer (issue #10)
+ * useTimer hook
  *
- * @param {object} socket   - Socket.IO client instance
- * @param {string} roomId   - current room identifier
- * @param {string} socketId - this client's socket id
+ * Subscribes to the ``timer:state`` and ``timer:expired`` Socket.io events
+ * emitted by the server and exposes a single timer state object to
+ * consumers.  No client-side setInterval -- all countdown values come
+ * directly from the server to prevent drift.
  *
- * @returns {{
- *   isHost: boolean,
- *   timerRemaining: number,
- *   timerStatus: string,
- *   configureTimer: (duration: number) => void,
- *   startTimer: () => void,
- *   pauseTimer: () => void,
- *   resetTimer: () => void,
- * }}
+ * @typedef  {Object} TimerState
+ * @property {'idle'|'running'|'paused'|'expired'} status
+ * @property {number}  remaining  - ms remaining
+ * @property {number}  duration   - total configured ms
+ * @property {boolean} isExpired  - true when timer hit zero
+ * @property {boolean} isWarning  - true during final 10s
+ *
+ * @param  {Object} socket - the active Socket.io client socket
+ * @returns {TimerState}
  */
-export function useTimer(socket, roomId, socketId) {
-  const [isHost, setIsHost] = useState(false);
-  const [timerRemaining, setTimerRemaining] = useState(60);
-  const [timerStatus, setTimerStatus] = useState('idle');
+const DEFAULT_STATE = {
+  status:   'idle',
+  remaining: 60_000, // default 1 min until server sends real state
+  duration:  60_000,
+  isExpired: false,
+  isWarning: false,
+};
+
+export function useTimer(socket) {
+  const [state, setState] = useState(DEFAULT_STATE);
 
   useEffect(() => {
     if (!socket) return;
 
-    // Initial room state on join
-    const onRoomState = (data) => {
-      setIsHost(data.hostSocketId === socketId);
-      setTimerRemaining(data.timerRemaining ?? 60);
-      setTimerStatus(data.timerStatus ?? 'idle');
-    };
+    // Server broadcasts authoritative timer state every ~500ms
+    function handleState({ status, remaining, duration }) {
+      setState({
+        status,
+        remaining,
+        duration,
+        isExpired: status === 'expired',
+        isWarning: status === 'running' && remaining <= 10_000,
+      });
+    }
 
-    // Live tick from server
-    const onTimerTick = ({ remaining, status }) => {
-      setTimerRemaining(remaining);
-      setTimerStatus(status);
-    };
+    // Server fires once when timer hits zero (or all votes cast)
+    function handleExpired() {
+      setState((prev) => ({
+        ...prev,
+        status:    'expired',
+        remaining: 0,
+        isExpired: true,
+        isWarning: false,
+      }));
+    }
 
-    // Timer expired
-    const onTimerFinished = () => {
-      setTimerRemaining(0);
-      setTimerStatus('finished');
-    };
-
-    // Host reassignment
-    const onHostChanged = ({ hostSocketId }) => {
-      setIsHost(hostSocketId === socketId);
-    };
-
-    socket.on('room:state', onRoomState);
-    socket.on('timer:tick', onTimerTick);
-    socket.on('timer:finished', onTimerFinished);
-    socket.on('host:changed', onHostChanged);
+    socket.on('timer:state', handleState);
+    socket.on('timer:expired', handleExpired);
 
     return () => {
-      socket.off('room:state', onRoomState);
-      socket.off('timer:tick', onTimerTick);
-      socket.off('timer:finished', onTimerFinished);
-      socket.off('host:changed', onHostChanged);
+      socket.off('timer:state', handleState);
+      socket.off('timer:expired', handleExpired);
     };
-  }, [socket, socketId]);
+  }, [socket]);
 
-  const configureTimer = (duration) => {
-    if (socket) socket.emit('timer:configure', { roomId, duration });
-  };
-
-  const startTimer = () => {
-    if (socket) socket.emit('timer:start', { roomId });
-  };
-
-  const pauseTimer = () => {
-    if (socket) socket.emit('timer:pause', { roomId });
-  };
-
-  const resetTimer = () => {
-    if (socket) socket.emit('timer:reset', { roomId });
-  };
-
-  return { isHost, timerRemaining, timerStatus, configureTimer, startTimer, pauseTimer, resetTimer };
+  return state;
 }
