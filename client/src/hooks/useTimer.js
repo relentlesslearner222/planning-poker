@@ -1,41 +1,82 @@
 import { useState, useEffect } from 'react';
 
 /**
- * useTimer -- custom hook that returns the remaining milliseconds for a
- * server-supplied timer.
+ * useTimer - custom hook for server-synchronized timer (issue #10)
  *
- * @param {number | null} startTime  - epoch ms when the timer was started
- * @param {number | null} durationMs - total duration in ms
- * @returns {number} remainingMs     - ms remaining (>= 0)
+ * @param {object} socket   - Socket.IO client instance
+ * @param {string} roomId   - current room identifier
+ * @param {string} socketId - this client's socket id
  *
- * Design notes:
- *  - Computes remainingMs = durationMs - (Date.now() - startTime) on every
- *    tick so the value is always anchored to the server-recorded startTime
- *    rather than accumulating client-side drift. (AC4)
- *  - Ticks every 100 ms for smooth MM:SS updates without excessive rerenders.
+ * @returns {{
+ *   isHost: boolean,
+ *   timerRemaining: number,
+ *   timerStatus: string,
+ *   configureTimer: (duration: number) => void,
+ *   startTimer: () => void,
+ *   pauseTimer: () => void,
+ *   resetTimer: () => void,
+ * }}
  */
-export function useTimer(startTime, durationMs) {
-  const [remainingMs, setRemaining] = useState(() => {
-    if (startTime == null || durationMs == null) return null;
-    return Math.max(0, durationMs - (Date.now() - startTime));
-  });
+export function useTimer(socket, roomId, socketId) {
+  const [isHost, setIsHost] = useState(false);
+  const [timerRemaining, setTimerRemaining] = useState(60);
+  const [timerStatus, setTimerStatus] = useState('idle');
 
   useEffect(() => {
-    if (startTime == null || durationMs == null) {
-      setRemaining(null);
-      return;
-    }
+    if (!socket) return;
 
-    // Immediately sync on mount / prop change
-    setRemaining(Math.max(0, durationMs - (Date.now() - startTime)));
+    // Initial room state on join
+    const onRoomState = (data) => {
+      setIsHost(data.hostSocketId === socketId);
+      setTimerRemaining(data.timerRemaining ?? 60);
+      setTimerStatus(data.timerStatus ?? 'idle');
+    };
 
-    const id = setInterval(() => {
-      const next = Math.max(0, durationMs - (Date.now() - startTime));
-      setRemaining(next);
-    }, 100);
+    // Live tick from server
+    const onTimerTick = ({ remaining, status }) => {
+      setTimerRemaining(remaining);
+      setTimerStatus(status);
+    };
 
-    return () => clearInterval(id);
-  }, [startTime, durationMs]);
+    // Timer expired
+    const onTimerFinished = () => {
+      setTimerRemaining(0);
+      setTimerStatus('finished');
+    };
 
-  return remainingMs;
+    // Host reassignment
+    const onHostChanged = ({ hostSocketId }) => {
+      setIsHost(hostSocketId === socketId);
+    };
+
+    socket.on('room:state', onRoomState);
+    socket.on('timer:tick', onTimerTick);
+    socket.on('timer:finished', onTimerFinished);
+    socket.on('host:changed', onHostChanged);
+
+    return () => {
+      socket.off('room:state', onRoomState);
+      socket.off('timer:tick', onTimerTick);
+      socket.off('timer:finished', onTimerFinished);
+      socket.off('host:changed', onHostChanged);
+    };
+  }, [socket, socketId]);
+
+  const configureTimer = (duration) => {
+    if (socket) socket.emit('timer:configure', { roomId, duration });
+  };
+
+  const startTimer = () => {
+    if (socket) socket.emit('timer:start', { roomId });
+  };
+
+  const pauseTimer = () => {
+    if (socket) socket.emit('timer:pause', { roomId });
+  };
+
+  const resetTimer = () => {
+    if (socket) socket.emit('timer:reset', { roomId });
+  };
+
+  return { isHost, timerRemaining, timerStatus, configureTimer, startTimer, pauseTimer, resetTimer };
 }
