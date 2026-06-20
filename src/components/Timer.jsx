@@ -1,84 +1,83 @@
 import React from 'react';
-import './Timer.css';
+import { useTimer } from '../hooks/useTimer';
+import '../styles/timer.css';
 
-clss name="timer-wrapper">
+/**
  * Timer
- * @props {{ secondsLeft: number, totalSeconds: number, isRunning: bool,
- *           onStart: fn, onPause: fn, onReset: fn, isHost: bool }}
-*/
-const RADIUS = 45;
-const CIRCUMFERENCE = 2 * Math.PI * RADIUS; // ~ 282.75
+ *
+ * A self-contained countdown timer component for planning poker sessions.
+ *
+ * Props:
+ *  @param {number}  durationSeconds  Total seconds for the countdown (default  60)
+ *  @param {Function} onExpire         Callback fired when the timer hits zero
+ *  @param {boolean}  autoStart        Whether the timer starts automatically
+ *  @param {string}   label            Optional label above the clock
+ */
+const Timer = ({
+  durationSeconds = 60,
+  onExpire,
+  autoStart = false,
+  label = 'Voting Timer',
+}) => {
+  const { timeLeft, isRunning, start, pause, reset } = useTimer(
+    durationSeconds,
+    onExpire
+  );
 
-export default function Timer({
-  secondsLeft,
-  totalSeconds = 60,
-  isRunning,
-  onStart,
-  onPause,
-  onReset,
-  isHost = false,
-}) {
-  const progress = secondsLeft / totalSeconds; // 1 -> 0
-  const strokeDashoffset = CIRCUMFERENCE * (1 - progress);
+  const percentLeft = (timeLeft / durationSeconds) * 100;
+  const isUrgent = percentLeft <= 20 && timeLeft > 0;
 
-  const minutes = Math.floor(secondsLeft / 60);
-  const secs = secondsLeft % 60;
-  const label = `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  // React useEffect for autoStart
+  React.useEffect(() => {
+    if (autoStart) start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart]);
 
-  // Colour shifts: green > yellow > red
-  const ringColour =
-    progress > 0.5 ? '#22c38e'
-    : progress > 0.25 ? '#f59e0b'
-    : '#ef4444';
+  // Format seconds -> MM:SS
+  const format = (seconds) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
 
   return (
-    <div className="timer-wrapper">
-      <svg className="timer-svg" viewBox="0 0 100 100">
-        {/* Track ring */}
-        <circle
-          cx="50" cy="50" r={RADIUS}
-          fill="none" stroke="#e5e7eb" strokeWidth="8"
-        />
-        {/* Progress ring */}
-        <circle
-          cx="50" cy="50" r={RADIUS}
-          fill="none"
-          stroke={ringColour}
-          strokeWidth="8"
-          strokeLinecap="round"
-          strokeDasharray={CIRCUMFERENCE}
-          strokeDashoffset={strokeDashoffset}
-          style={{ transform: 'rotate(-90deg)', transformOrigin: 'center' }}
-        />
-        {/* Countdown label */}
-        <text
-          x="50" y="55"
-          textAnchor="middle"
-          fill={#ringColour}
-          fontSize="18"
-          fontWeight="600"
-          fontFamily="monospace"
-        >
-          {label}
-        </text>
-      </svg>
+    <div className="timer-wrapper" role="timer" aria-live="polite">
+      {label && <span className="timer-label">{label}</span>}
 
+      {/* Progress bar */}
+      <div className="timer-progress" aria-hidden="true">
+        <div
+          className={`timer-progress-bar${isUrgent ? ' urgent' : ''}`}
+          style={{ width: `${percentLeft}%` }}
+        />
+      </div>
+
+      {/* Clock display */}
+      <span className={`timer-display${isUrgent ? ' urgent' : ''}`}>
+        {format(timeLeft)}
+      </span>
+
+      {/* Controls */}
       <div className="timer-controls">
         {isRunning ? (
-          <button className="btn btn-pause" onClick={onPause} title="Pause">
+          <button className="timer-btn pause" onClick={pause}>
             ⏸ Pause
           </button>
         ) : (
-          <button className="btn btn-start" onClick={onStart} title="Start">
-            ✅ Start
+          <button
+            className="timer-btn start"
+            onClick={start}
+            disabled={timeLeft === 0}
+          >
+            ► Start
           </button>
         )}
-        {isHost && (
-          <button className="btn btn-reset" onClick={onReset} title="Reset">
-            · Reset
-          </button>
-        )}
+        <button className="timer-btn reset" onClick={reset}>
+          ➬ Reset
+        </button>
       </div>
     </div>
   );
-}
+};
+
+export default Timer;
