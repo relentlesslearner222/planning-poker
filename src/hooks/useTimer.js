@@ -2,56 +2,59 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 
 /**
  * useTimer
- * @param {number}  initialSeconds  - Total countdown duration in seconds (default 60).
- * @param {Function} onExpiry      - Callback fired when the timer reaches zero.
- * @returns {{ secondsLeft, isRunning, start, pause, reset }}
+ *
+ * A custom React hook that exposes a countdown timer with start, pause,
+ * reset, and an optional onExpire callback.
+ *
+ * @param {number} initialSeconds - Total seconds the timer should count down from.
+ * @param {Function} [onExpire]   - Optional callback fired when the timer reaches 0.
+ * @returns {{timeLeft: number, isRunning: boolean, start: Function, pause: Function, reset: Function}}
  */
-export function useTimer(initialSeconds = 60, onExpiry = () => {}) {
+export function useTimer(initialSeconds = 60, onExpire) {
   const [isRunning, setIsRunning] = useState(false);
-  const [secondsLeft, setSecondsLeft] = useState(initialSeconds);
-  const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const onExpiryRef = useRef(onExpiry);
+  const [timeLeft, setTimeLeft] = useState(initialSeconds);
+  const intervalRef = useRef(null);
 
-  // Keep callback ref up to date without re-subscribing the interval
-  useEffect(() => { onExpiryRef.current = onExpiry; }, [onExpiry]);
-
-  const clearTick = () => {
-    if (tickRef.current !== null) {
-      clearInterval(tickRef.current);
-      tickRef.current = null;
-    }
-  };
-
+  // Clean up interval on unmount
   useEffect(() => {
-    if (!isRunning) { clearTick(); return; }
+    return () => clearInterval(intervalRef.current);
+  }, []);
 
-    tickRef.current = setInterval(() => {
-      setSecondsLeft((prev) => {
-        if (prev <= 1) {
-          clearTick();
-          setIsRunning(false);
-          onExpiryRef.current();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return clearTick;
-  }, [isRunning]);
+  // Tick logic
+  useEffect(() => {
+    if (isRunning) {
+      intervalRef.current = setInterval(() => {
+        setTimeLeft((prev) => {
+          if (prev <= 1) {
+            clearInterval(intervalRef.current);
+            setIsRunning(false);
+            if (typeof onExpire === 'function') onExpire();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } else {
+      clearInterval(intervalRef.current);
+    }
+    return () => clearInterval(intervalRef.current);
+  }, [isRunning, onExpire]);
 
   const start = useCallback(() => {
-    setSecondsLeft((prev) => (prev <= 0 ? initialSeconds : prev));
-    setIsRunning(true);
-  }, [initialSeconds]);
+    if (timeLeft > 0) setIsRunning(true);
+  }, [timeLeft]);
 
-  const pause = useCallback(() => setIsRunning(false), []);
+  const pause = useCallback(() => {
+    setIsRunning(false);
+  }, []);
 
   const reset = useCallback(() => {
-    clearTick();
+    clearInterval(intervalRef.current);
     setIsRunning(false);
-    setSecondsLeft(initialSeconds);
+    setTimeLeft(initialSeconds);
   }, [initialSeconds]);
 
-  return { secondsLeft, isRunning, start, pause, reset };
+  return { timeLeft, isRunning, start, pause, reset };
 }
+
+export default useTimer;
