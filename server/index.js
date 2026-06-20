@@ -1,9 +1,8 @@
-// server/index.js
-// Planning Poker -- Server with Timer Support (Issue #10)
-
+// server/index.js – Planning Poker with server-synchronized timer (issue #10)
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
@@ -11,222 +10,171 @@ const io = new Server(server, {
   cors: { origin: '*', methods: ['GET', 'POST'] },
 });
 
+app.use(express.static(path.join(__dirname, '../client/build')));
+app.get('*', (_req, res) =>
+  res.sendFile(path.join(__dirname, '../client/build/index.html'))
+);
+
 /**
- * rooms Map<roomId, RoomState>
- *
- * RoomState = {
- *   participants: Map<socketId, { name, vote }>,
- *   hostSocketId: String | null,
- *   revealed: Boolean,
- *   timer: { startTime: Number, durationMs: Number, intervalRef: Timeout | null }
- * }
+ * rooms: Map<roomId, {
+ *   hostSocketId: string | null,
+ *   members: string[],
+ *   votes: Map<socketId, value>,
+ *   revealed: boolean,
+ *   timerDuration: number,
+ *   timerRemaining: number,
+ *   timerStatus: 'idle'|'running'|'paused'|'finished',
+ *   timerInterval: NodeJS.Timeout | null,
+ * }>
  */
 const rooms = new Map();
-
-// ----------------------------------------------------------------------------
-// Helpers
-// ----------------------------------------------------------------------------
 
 function getOrCreateRoom(roomId) {
   if (!rooms.has(roomId)) {
     rooms.set(roomId, {
-      participants: new Map(),
       hostSocketId: null,
+      members: [],
+      votes: new Map(),
       revealed: false,
-      timer: { startTime: null, durationMs: null, intervalRef: null },
+      timerDuration: 60,
+      timerRemaining: 60,
+      timerStatus: 'idle',
+      timerInterval: null,
     });
   }
   return rooms.get(roomId);
 }
 
-function clearTimer(room) {
-  if (room.timer.intervalRef) {
-    clearInterval(room.timer.intervalRef);
-    room.timer.intervalRef = null;
-  }
-  room.timer.startTime = null;
-  room.timer.durationMs = null;
-}
-
-function allVoted(room) {
-  if (room.participants.size === 0) return false;
-  for (const p of room.participants.values()) {
-    if (p.vote === null || p.vote === undefined) return false;
-  }
-  return true;
-}
-
-function reassignHost(roomId, room) {
-  const next = room.participants.keys().next().value;
-  if (next) {
-    room.hostSocketId = next;
-    io.to(next).emit('host:assigned', { socketId: next });
-  } else {
-    room.hostSocketId = null;
+function clearRoomTimer(room) {
+  if (room.timerInterval) {
+    clearInterval(room.timerInterval);
+    room.timerInterval = null;
   }
 }
 
-// ----------------------------------------------------------------------------
-// Socket.io connection handler
-// ----------------------------------------------------------------------------
+function finishTimer(roomId) {
+  const room = rooms.get(roomId);
+  if (!room) return;
+  clearRoomTimer(room);
+  room.timerStatus = 'finished';
+  room.timerRemaining = 0;
+  io.to(roomId).emit('timer:finished', { remaining: 0 });
+  if (!room.revealed) {
+    room.revealed = true;
+    const votesObj = Object.fromEntries(room.votes);
+    io.to(roomId).emit('timer:revealed', { votes: votesObj });
+  }
+}
 
-io.on('connection', (socket) => {
-  let currentRoomId = null;
+function startInterval(roomId) {
+  const room = rooms.get(roomId);
+  if (!room) return;
+  clearRoomTimer(room);
+  room.timerStatus = 'running';
+  room.timerInterval = setInterval(() => {
+    const r = rooms.get(roomId);
+    if (!r || r.timerStatus !== 'running') return;
+    r.timerRemaining = Math.max(0, r.timerRemaining - 1);
+    io.to(roomId).emit('timer:tick', { remaining: r.timerRemaining, status: r.timerStatus });
+    if (r.timerRemaining <= 0) finishTimer(roomId);
+  }, 1000);
+}
 
-  // ---- room:join -----------------------------------------------------------
-  socket.on('room:join', ({ roomId, name }) => {
-    const room = getOrCreateRoom(roomId);
-    currentRoomId = roomId;
+function checkAllVoted(roomId) {
+  const room = rooms.get(roomId);
+  if (!room || room.revealed || room.timerStatus === 'finished') return;
+  if (room.members.length === 0) return;
+  const allVoted = room.members.every((id) => room.votes.has(id));
+  if (allVoted) finishTimer(roomId);
+}
 
-    // First participant becomes host
-    if (room.participants.size === 0) {
-      room.hostSocketId = socket.id;
-    }
+io( on('connection', (socket) => {
+  let currentRoom = null;
 
-    room.participants.set(socket.id, { name: name || socket.id, vote: null });
+  socket.on('join-room', ({ roomId, name }) => {
+    currentRoom = roomId;
     socket.join(roomId);
-
-    // Inform joining client whether they are the host
-    socket.emit('host:status', { isHost: room.hostSocketId === socket.id });
-
-    // AC11: replay active timer state to rejoining/new client
-    if (room.timer.startTime !== null) {
-      socket.emit('timer:started', {
-        startTime: room.timer.startTime,
-        durationMs: room.timer.durationMs,
-      });
-    }
-
-    // Broadcast updated participant list
-    io.to(roomId).emit('room:update', {
-      participants: Array.from(room.participants.entries()).map(([id, p]) => ({
-        id,
-        name: p.name,
-        voted: p.vote !== null,
-      })),
+    const room = getOrCreateRoom(roomId);
+    if (room.members.length === 0) room.hostSocketId = socket.id;
+    if (!room.members.includes(socket.id)) room.members.push(socket.id);
+    socket.emit('room:state', {
       hostSocketId: room.hostSocketId,
+      votes: Object.fromEntries(room.votes),
+      revealed: room.revealed,
+      timerDuration: room.timerDuration,
+      timerRemaining: room.timerRemaining,
+      timerStatus: room.timerStatus,
     });
+    socket.to(roomId).emit('user:joined', { socketId: socket.id, name });
   });
 
-  // ---- vote:submit --------------------------------------------------------
-  socket.on('vote:submit', ({ vote }) => {
-    if (!currentRoomId) return;
-    const room = rooms.get(currentRoomId);
-    if (!room || room.revealed) return;
-
-    const participant = room.participants.get(socket.id);
-    if (!participant) return;
-    participant.vote = vote;
-
-    io.to(currentRoomId).emit('room:update', {
-      participants: Array.from(room.participants.entries()).map(([id, p]) => ({
-        id,
-        name: p.name,
-        voted: p.vote !== null,
-      })),
-      hostSocketId: room.hostSocketId,
-    });
-
-    // AC8: all participants voted --> stop timer + reveal
-    if (allVoted(room)) {
-      if (room.timer.intervalRef) {
-        clearTimer(room);
-        io.to(currentRoomId).emit('timer:stopped');
-      }
-      room.revealed = true;
-      io.to(currentRoomId).emit('votes:reveal', {
-        votes: Array.from(room.participants.entries()).map(([id, p]) => ({ id, name: p.name, vote: p.vote })),
-      });
-    }
+  socket.on('vote', ({ roomId, value }) => {
+    const room = rooms.get(roomId);
+    if (!room || room.revealed || room.timerStatus === 'finished') return;
+    room.votes.set(socket.id, value);
+    io.to(roomId).emit('vote:cast', { socketId: socket.id });
+    checkAllVoted(roomId);
   });
 
-  // ---- timer:start --------------------------------------------------------
-  socket.on('timer:start', ({ durationMs }) => {
-    if (!currentRoomId) return;
-    const room = rooms.get(currentRoomId);
-    if (!room) return;
-
-    // Only host may start the timer (AC2, T6)
-    if (room.hostSocketId !== socket.id) {
-      socket.emit('timer:error', { message: 'Only the host may start the timer.' });
-      return;
-    }
-
-    // Server-side validation: [10000, 300000] ms (AC4)
-    const clamped = Math.min(Math.max(durationMs, 10000), 300000);
-
-    // Clear any existing timer
-    clearTimer(room);
-
-    const startTime = Date.now();
-    room.timer.startTime = startTime;
-    room.timer.durationMs = clamped;
-
-    // AC3: broadcast timer:started
-    io.to(currentRoomId).emit('timer:started', { startTime, durationMs: clamped });
-
-    // Server-side 1s interval to detect expiry (AC10)
-    room.timer.intervalRef = setInterval(() => {
-      const remaining = clamped - (Date.now() - startTime);
-      if (remaining <= 0) {
-        clearTimer(room);
-        room.revealed = true;
-        // AC7: auto-reveal
-        io.to(currentRoomId).emit('votes:reveal', {
-          votes: Array.from(room.participants.entries()).map(([id, p]) => ({ id, name: p.name, vote: p.vote })),
-        });
-      }
-    }, 1000);
+  socket.on('timer:configure', ({ roomId, duration }) => {
+    const room = rooms.get(roomId);
+    if (!room || room.hostSocketId !== socket.id) return;
+    if (room.timerStatus === 'running') return;
+    const secs = Math.min(300, Math.max(10, parseInt(duration, 10) || 60));
+    room.timerDuration = secs;
+    room.timerRemaining = secs;
+    room.timerStatus = 'idle';
+    io.to(roomId).emit('timer:tick', { remaining: room.timerRemaining, status: room.timerStatus });
   });
 
-  // ---- timer:cancel -------------------------------------------------------
-  socket.on('timer:cancel', () => {
-    if (!currentRoomId) return;
-    const room = rooms.get(currentRoomId);
-    if (!room) return;
-
-    // Only host may cancel (AC9)
-    if (room.hostSocketId !== socket.id) {
-      socket.emit('timer:error', { message: 'Only the host may cancel the timer.' });
-      return;
-    }
-
-    clearTimer(room);
-    // AC9: no reveal on cancel
-    io.to(currentRoomId).emit('timer:stopped');
+  socket.on('timer:start', ({ roomId }) => {
+    const room = rooms.get(roomId);
+    if (!room || room.hostSocketId !== socket.id) return;
+    if (room.timerStatus === 'running' || room.timerStatus === 'finished') return;
+    startInterval(roomId);
+    io.to(roomId).emit('timer:tick', { remaining: room.timerRemaining, status: room.timerStatus });
   });
 
-  // ---- disconnect ---------------------------------------------------------
+  socket.on('timer:pause', ({ roomId }) => {
+    const room = rooms.get(roomId);
+    if (!room || room.hostSocketId !== socket.id) return;
+    if (room.timerStatus !== 'running') return;
+    clearRoomTimer(room);
+    room.timerStatus = 'paused';
+    io.to(roomId).emit('timer:tick', { remaining: room.timerRemaining, status: room.timerStatus });
+  });
+
+  socket.on('timer:reset', ({ roomId }) => {
+    const room = rooms.get(roomId);
+    if (!room || room.hostSocketId !== socket.id) return;
+    clearRoomTimer(room);
+    room.timerRemaining = room.timerDuration;
+    room.timerStatus = 'idle';
+    room.revealed = false;
+    room.votes.clear();
+    io.to(roomId).emit('timer:tick', { remaining: room.timerRemaining, status: room.timerStatus });
+    io.to(roomId).emit('votes:reset');
+  });
+
   socket.on('disconnect', () => {
-    if (!currentRoomId) return;
-    const room = rooms.get(currentRoomId);
+    if (!currentRoom) return;
+    const room = rooms.get(currentRoom);
     if (!room) return;
-
-    room.participants.delete(socket.id);
-
-    // AC1: host reassignment
+    room.members = room.members.filter((id) => id !== socket.id);
+    room.votes.delete(socket.id);
+    if (room.members.length === 0) {
+      clearRoomTimer(room);
+      rooms.delete(currentRoom);
+      return;
+    }
     if (room.hostSocketId === socket.id) {
-      reassignHost(currentRoomId, room);
+      room.hostSocketId = room.members[0];
+      io.to(currentRoom).emit('host:changed', { hostSocketId: room.hostSocketId });
     }
-
-    if (room.participants.size === 0) {
-      // Clean up empty room
-      clearTimer(room);
-      rooms.delete(currentRoomId);
-    } else {
-      io.to(currentRoomId).emit('room:update', {
-        participants: Array.from(room.participants.entries()).map(([id, p]) => ({
-          id,
-          name: p.name,
-          voted: p.vote !== null,
-        })),
-        hostSocketId: room.hostSocketId,
-      });
-    }
+    io.to(currentRoom).emit('user:left', { socketId: socket.id });
+    checkAllVoted(currentRoom);
   });
 });
 
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
-
-module.exports = { app, server, io, rooms }; // exported for testing
