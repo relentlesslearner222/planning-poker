@@ -1,0 +1,95 @@
+/* client/src/components/TimerPanel.css */
+
+/* Container */
+.timer-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1.25rem 1.5rem;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+  width: 280px;
+  margin: 0 auto;
+}
+
+/* Countdown display */
+.timer-display {
+  font-size: 3rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #1a202c;
+  transition: color 0.3s;
+}
+
+/* AC6 - red pulse when <= 10s */
+.timer-display.urgent {
+  color: #e53e4e;
+  animation: pulse-timer 1s ease-in-out infinite;
+}
+
+@keyframes pulse-timer {
+  0%  { opacity: 1;    transform: scale(1); }
+  50% { opacity: 0.6;  transform: scale(1.08); }
+  100% { opacity: 1;   transform: scale(1); }
+}
+
+/* Status badge */
+.timer-status {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #718096;
+}
+
+/* Host controls */
+.timer-controls {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.timer-controls button {
+  padding: 0.4rem 0.9rem;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.timer-controls button.btn-start   { background: #38a169; color: #fff; }
+.timer-controls button.btn-start:hover { background: #2f8558; }
+.timer-controls button.btn-pause   { background: #dd6b20; color: #fff; }
+
+.timer-controls button.btn-pause:hover { background: #c05a18; }
+.timer-controls button.btn-reset   { background: #718096; color: #fff; }
+
+.timer-controls button.btn-reset:hover { background: #5a677d; }
+
+/* Duration input row */
+.timer-config {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.timer-config input {
+  width: 60px;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid #cbd2d0;
+  border-radius: 4px;
+  text-align: center;
+}
+
+.host-badge {
+  font-size: 0.7rem;
+  color: #718096;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  padding: 0.1rem 0.4rem;
+}
