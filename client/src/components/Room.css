@@ -1,0 +1,11 @@
+.room{max-width:768px;margin:2rem auto;padding:1rem}
+.room-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1.5rem}
+.room-code{font-size:.85rem;color:#93c5fd;cursor:pointer;letter-spacing:.1em}
+.leave-btn{background:#7f1d1d;color:#fca5a5;font-size:.85rem}
+.timer-section{text-align:center;margin-bottom:1.5rem}
+.topic-label{font-weight:700;color:#facc4a;margin-top:.5rem}
+.host-controls{display:flex;flex-direction:column;gap:.75rem;margin-bottom:1rem;background:#1f293a;border-radius:8px;padding:1rem}
+.btn-group{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.5rem}
+.btn-group button{flex:1;background:#6476ef;color:#fff}
+.btn-group button:hover{background:#4338ca}
+.reset-area{margin-top:1.5rem;align-items:center}
