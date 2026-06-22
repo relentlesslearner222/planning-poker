@@ -1,0 +1,6 @@
+.participants{background:#1f293a;border-radius:8px;padding:1rem;margin-top:1rem}
+.participants ul{list-style:none;padding:0;margin:0}
+.participants li{display:flex;justify-content:space-between;padding:.5rem 0;border-bottom:1px solid #374151}
+.participants li.voted .p-name{color:#86efac}
+.p-status{color:#9ca3af;font-size:.9rem}
+.p-vote{font-weight:700;color:#facc4a}
