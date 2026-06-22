@@ -1,0 +1,5 @@
+** {box-sizing:border-box}
+body{margin:0;font-family:'Segoe UI',sans-serif;background:#111827;color:#e5e7eb}
+button{cursor:pointer;border:none;border-radius:8px;padding:.6rem 1.2rem;font-size:1rem}
+input,select{padding:.6rem 1rem;border-radius:8px;border:1px solid #374151;background:#1f293a;color:#e5e7eb;font-size:1rem;width:100%}
+input::focus,select::focus{outline:2solid #6476ef}
