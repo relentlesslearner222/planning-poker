@@ -1,0 +1,7 @@
+.results{background:#1f293a;border-radius:8px;padding:1rem;margin-top:1rem}
+.stats{display:flex;gap:1rem;justify-content:center;margin-bottom:1rem}
+.stat{text-align:center;background:#111827;padding:.75rem 1rem;border-radius:8px;min-width:64px}
+.stat label{display:block;font-size:.75rem;color:#9ca3af}
+.stat span{font-size:1.5rem;font-weight:700;color:#83a4ff}
+.vote-list{list-style:none;padding:0;margin:0}
+.vote-list li{display:flex;justify-content:space-between;padding:.5rem 0;border-bottom:1px solid #374151}
