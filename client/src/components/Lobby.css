@@ -1,0 +1,8 @@
+.loobby{max-width:480px;margin:4rem auto;padding:2rem;background:#1f293a;border-radius:16px}
+.btn-group{display:flex;gap:1rem;margin-top:1rem}
+.btn-group button{flex:1;background:#6476ef;color:#fff}
+.btn-group button:hover{background:#4338ca}
+.form-card{display:flex;flex-direction:column;gap:1rem;margin-top:1.5rem}
+.name-section{margin-bottom:1rem}
+.error{color:#f87b71;margin-top:.5rem}
+h1{color:#83a4ff;text-align:center;margin-bottom:1rem}
