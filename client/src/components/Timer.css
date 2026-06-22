@@ -1,0 +1,6 @@
+.timer-wrap{position:relative;width:110px;height:110px;margin:0 auto}
+.timer-bg{fill:none;stroke:#374151;stroke-width:8}
+.timer-progress{fill:none;stroke:#6476ef;stroke-width:8;stroke-linecap:round;transform:rotate(-90deg);transform-origin:center;transition:stroke-dashoffset 1s linear}
+.timer-wrap.urgent .timer-progress{stroke:#f87171}
+.timer-wrap.paused .timer-progress{stroke:#fabc0b}
+.timer-label{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:1.3rem;font-weight:700}
