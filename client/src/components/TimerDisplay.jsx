@@ -1,15 +1,15 @@
 import React from 'react';
 
 /**
- * TimerDisplay.jsx
+ * TimerDisplay — read-only SVG countdown for all participants.
  *
  * Props:
  *   timerSync: { remaining: number, running: boolean, totalDuration: number }
- *   isHost: boolean (unused in display but passed for flexibility)
+ *   isHost: boolean
  */
 
-const RADIUS = 54;    // SVG circle radius
-const CIRCUMFERE8CE = 2 * Math.PI * RADIUS;
+const RADIUS = 54;
+const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
 const styles = `
   .timer-wrapper {
@@ -82,7 +82,7 @@ export default function TimerDisplay({ timerSync, isHost }) {
             transform="rotate(-90 65 65)"
           />
         </svg>
-        <span className=x`timer-text${isWarning ? ' pulse-red' : ''}`}>
+        <span className={`timer-text${isWarning ? ' pulse-red' : ''}`}>
           {formatTime(remaining)}
         </span>
       </div>
