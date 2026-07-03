@@ -1,17 +1,17 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 
 /**
- * TimerControls -- rendered exclusively for the room host. (AC2)
+ * TimerControls -- rendered exclusively for the room host.
  *
  * Props:
  *   socket         {Socket}   Socket.io client instance
  *   isTimerActive {boolean}  whether a countdown is currently running
  */
 export default function TimerControls({ socket, isTimerActive }) {
-  const [durationSec, setDurationSec] = useState(60); // default 60 
-  
+  const [durationSec, setDurationSec] = useState(60); // default 60s
+
   function handleStart() {
-    // AC2: client-side clamp [10, 300] seconds (server revalidates)
+    // Client-side clamp [10, 300] seconds (server revalidates)
     const secs = Math.min(Math.max(durationSec, 10), 300);
     socket.emit('timer:start', { durationMs: secs * 1000 });
   }
@@ -21,7 +21,7 @@ export default function TimerControls({ socket, isTimerActive }) {
   }
 
   return (
-    <div className="timer-controls">
+    <div className="timer-controls flex items-center gap-3 flex-wrap">
       <label htmlFor="timer-duration">
         Timer duration (seconds):
       </label>
@@ -35,9 +35,19 @@ export default function TimerControls({ socket, isTimerActive }) {
         disabled={isTimerActive}
       />
       {!isTimerActive ? (
-        <button onClick={handleStart}>Start Timer</button>
+        <button
+          onClick={handleStart}
+          className="bg-brand-primary hover:bg-brand-dark text-white text-sm font-medium px-4 py-1.5 rounded-lg transition-colors"
+        >
+          Start Timer
+        </button>
       ) : (
-        <button onClick={handleCancel}>Cancel Timer</button>
+        <button
+          onClick={handleCancel}
+          className="bg-red-500 hover:bg-red-600 text-white text-sm font-medium px-4 py-1.5 rounded-lg transition-colors"
+        >
+          Cancel Timer
+        </button>
       )}
     </div>
   );
